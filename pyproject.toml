@@ -12,9 +12,51 @@ dependencies = [
     "matplotlib>=3.11.2",
 ]
 
-[project.scripts]
-pitwall = "pitwall:main"
-
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.12",
+    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", # pycodestyle errors / warning
+    "F", # pyflakes: unused imports, undefined names
+    "I", # import sorting
+    "B", # bugbear: likely bugs (mutable defaults, etc.)
+    "UP", #pyupgrade: modern syntax
+    "SIM", # simplifications
+    "N", # pep8 naming
+    "C4", # comprehension
+    "PT", # pytest style
+    "RUF", # ruff-specific
+]
+unfixable = ["F401"]
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --cov --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["pitwall"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true

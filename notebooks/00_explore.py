@@ -2,7 +2,7 @@
 
 import itertools
 import statistics
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -37,8 +37,8 @@ def main() -> None:
         # one car's whole race trace = the circuit outline
         print(f"fetching car {CAR} locations")
         trace = client.locations(session.key, session.start, session.end, driver=CAR)
-        if not trace:
-            raise SystemExit(f"No location data for car {CAR}")
+        if len(trace) < 2:
+            raise SystemExit(f"Need at least 2 location samples for car {CAR}, got {len(trace)}")
 
         # all cars at one moment
         snap = session.start + timedelta(minutes=40)
@@ -55,7 +55,8 @@ def main() -> None:
     _fig, ax = plt.subplots(figsize=(9, 9))
     ax.plot([s.x for s in outline], [s.y for s in outline], color="lightgrey", lw=1, zorder=1)
 
-    latest = {s.driver: s for s in window}  # window is sorted by time, so the last one wins
+    # window is sorted by time, so the last one wins
+    latest = {s.driver: s for s in on_track(window)}
     for num, s in latest.items():
         driver = drivers.get(num)
         colour = "#" + (driver.team_colour if driver and driver.team_colour else "888888")
@@ -74,7 +75,9 @@ def main() -> None:
 
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title(f"{session.location} {session.year} - {snap:%Y-%m-%d %H:%M:%S} UTC")
+    ax.set_title(
+        f"{session.location} {session.year} - {snap.astimezone(UTC):%Y-%m-%d %H:%M:%S} UTC"
+    )
     plt.show()
 
 

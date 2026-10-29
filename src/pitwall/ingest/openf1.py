@@ -30,6 +30,7 @@ FIELDS: dict[str, frozenset[str]] = {
             "session_key",
             "meeting_key",
             "year",
+            "circuit_key",
             "circuit_short_name",
             "country_code",
             "country_key",
@@ -178,7 +179,7 @@ class OpenF1Client:
             raise ValueError(f"end {end} is before start {start}")
         unique: dict[tuple[datetime, int], LocationSample] = {}
         for lo, hi in self._windows(start, end):
-            # pad by 1 s: _fmt drops sub-secods, and we must not depend on whether the
+            # pad by 1 s: _fmt drops sub-seconds, and we must not depend on whether the
             # server treats date>/date< as strict or inclusive. Trimmed + deduped below.
             params: Params = {
                 "session_key": session_key,

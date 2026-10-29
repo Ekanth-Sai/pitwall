@@ -1,4 +1,4 @@
-.PHONY: fmt lint typecheck test check
+.PHONY: fmt lint typecheck test check audit
 
 fmt:
 	uv run ruff format .
@@ -15,3 +15,7 @@ test:
 	uv run pytest
 
 check: lint typecheck test
+
+audit:
+	uv export --format requirements-txt --all-groups --no-emit-project -q -o .audit-requirements.txt
+	uv run pip-audit --strict --disable-pip -r .audit-requirements.txt

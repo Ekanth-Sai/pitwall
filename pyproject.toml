@@ -20,6 +20,7 @@ build-backend = "uv_build"
 dev = [
     "hypothesis>=6.170.12",
     "mypy>=2.4.0",
+    "pip-audit>=2.10.1",
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
@@ -42,8 +43,14 @@ select = [
     "C4", # comprehension
     "PT", # pytest style
     "RUF", # ruff-specific
+    "S", # bandit: security issues
 ]
 unfixable = ["F401"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest is built on plain assert; S101 only matters in shipped code, where `python -O` strips asserts
+"tests/**" = ["S101"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

@@ -118,3 +118,15 @@ def test_cache_write_leaves_no_temp_files(tmp_path: Path) -> None:
 def test_create_builds_working_transport() -> None:
     with HttpTransport.create("https://example.test/v1/") as transport:
         assert isinstance(transport, HttpTransport)
+
+
+def test_failed_write_cleans_up_temp_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_args: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("pitwall.ingest.transport.os.replace", boom)
+    cached = CachedTransport(StubTransport(Response(200, b"[]")), tmp_path)
+
+    with pytest.raises(OSError, match="disk full"):
+        cached.get("location", {})
+    assert not [p for p in tmp_path.rglob("*") if p.is_file()]

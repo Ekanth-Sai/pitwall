@@ -46,6 +46,9 @@ def client_returning(response: Response) -> tuple[OpenF1Client, FakeTransport]:
         ("location", {"drive_number": 16}),  # the real typo comes from Phase 0
         ("location", {"dat>": "2024-09-01T13:00:00"}),
         ("teleport", {"session_key": 1}),
+        ("location", {"date<>": "2024-09-01T13:00:00"}),
+        ("location", {"session_key>>": 1}),
+        ("location", {"date>=": "2024-09-01T13:00:00"}),
     ],
 )
 def test_invalid_query_rejected_before_request(endpoint: str, params: Params) -> None:
@@ -128,6 +131,21 @@ def test_bad_row_shape_raises_schema_error() -> None:
     assert isinstance(exc_info.value.__cause__, KeyError)
 
 
+@pytest.mark.parametrize("field", ["name_acronym", "full_name", "team_name"])
+def test_null_text_field_raises_schema_error(field: str) -> None:
+    row: Row = {
+        "driver_number": 16,
+        "name_acronym": "LEC",
+        "full_name": "Charles LECLERC",
+        "team_name": "Ferrari",
+        "team_colour": None,
+    }
+    row[field] = None
+    client, _ = client_returning(ok([row]))
+    with pytest.raises(SchemaError, match="expected a string"):
+        client.drivers(9590)
+
+
 # chunked locations
 
 
@@ -137,9 +155,28 @@ def test_windows_cover_range_without_gaps() -> None:
 
     windows = [(p["date>"], p["date<"]) for _, p in fake.calls]
     assert windows == [
-        ("2024-09-01T13:00:00", "2024-09-01T13:10:00"),
-        ("2024-09-01T13:10:00", "2024-09-01T13:20:00"),
-        ("2024-09-01T13:20:00", "2024-09-01T13:25:00"),
+        ("2024-09-01T12:59:59", "2024-09-01T13:10:01"),
+        ("2024-09-01T13:09:59", "2024-09-01T13:20:01"),
+        ("2024-09-01T13:19:59", "2024-09-01T13:25:01"),
+    ]
+
+
+def test_results_trimmed_to_requested_range() -> None:
+    start = T0 + timedelta(milliseconds=700)
+    end = start + timedelta(minutes=5)
+    rows = [
+        loc("2024-09-01T13:00:00.500000+00:00"),  # before start
+        loc("2024-09-01T13:00:00.800000+00:00"),
+        loc("2024-09-01T13:05:00.600000+00:00"),
+        loc("2024-09-01T13:05:00.900000+00:00"),  # after end
+    ]
+    client, _ = client_returning(ok(rows))
+
+    samples = client.locations(1, start, end)
+
+    assert [s.time for s in samples] == [
+        T0 + timedelta(milliseconds=800),
+        T0 + timedelta(minutes=5, milliseconds=600),
     ]
 
 

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -14,8 +15,12 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.openf1.org/v1/"
 DEFAULT_CHUNK = timedelta(minutes=10)
+_PAD = timedelta(seconds=1)
 
 Row = dict[str, Any]
+
+# A filter key is a field name, optionally followed by one comparison operator
+_FILTER_KEY = re.compile(r"(?P<field>[a-z_]+)(?P<op>[<>])?")
 
 # Filterable fields per endpoint. OpenF1 answers an unknown field with the same 404
 # as "no results", so typos must be rejected before the request is sent.
@@ -26,6 +31,8 @@ FIELDS: dict[str, frozenset[str]] = {
             "meeting_key",
             "year",
             "circuit_short_name",
+            "country_code",
+            "country_key",
             "country_name",
             "location",
             "session_name",
@@ -35,7 +42,19 @@ FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "drivers": frozenset(
-        {"session_key", "meeting_key", "driver_number", "name_acronym", "team_name"}
+        {
+            "session_key",
+            "meeting_key",
+            "driver_number",
+            "name_acronym",
+            "full_name",
+            "first_name",
+            "last_name",
+            "broadcast_name",
+            "country_code",
+            "team_name",
+            "team_colour",
+        }
     ),
     "location": frozenset({"session_key", "meeting_key", "driver_number", "date", "x", "y", "z"}),
 }
@@ -54,8 +73,8 @@ class Session:
     def from_row(cls, row: Row) -> Self:
         return cls(
             key=int(row["session_key"]),
-            name=str(row["session_name"]),
-            location=str(row["location"]),
+            name=_text(row["session_name"]),
+            location=_text(row["location"]),
             year=int(row["year"]),
             start=datetime.fromisoformat(row["date_start"]),
             end=datetime.fromisoformat(row["date_end"]),
@@ -74,9 +93,9 @@ class Driver:
     def from_row(cls, row: Row) -> Self:
         return cls(
             number=int(row["driver_number"]),
-            acronym=str(row["name_acronym"]),
-            full_name=str(row["full_name"]),
-            team=str(row["team_name"]),
+            acronym=_text(row["name_acronym"]),
+            full_name=_text(row["full_name"]),
+            team=_text(row["team_name"]),
             team_colour=row["team_colour"] or None,
         )
 
@@ -98,6 +117,13 @@ class LocationSample:
             y=int(row["y"]),
             z=int(row["z"]),
         )
+
+
+def _text(value: object) -> str:
+    """Strict str(): JSON null must not become the strinf 'None'."""
+    if not isinstance(value, str):
+        raise TypeError(f"expected a string, got {type(value).__name__}")
+    return value
 
 
 def _parse[T](rows: list[Row], factory: Callable[[Row], T], endpoint: str) -> list[T]:
@@ -152,13 +178,20 @@ class OpenF1Client:
             raise ValueError(f"end {end} is before start {start}")
         unique: dict[tuple[datetime, int], LocationSample] = {}
         for lo, hi in self._windows(start, end):
-            params: Params = {"session_key": session_key, "date>": _fmt(lo), "date<": _fmt(hi)}
+            # pad by 1 s: _fmt drops sub-secods, and we must not depend on whether the
+            # server treats date>/date< as strict or inclusive. Trimmed + deduped below.
+            params: Params = {
+                "session_key": session_key,
+                "date>": _fmt(lo - _PAD),
+                "date<": _fmt(hi + _PAD),
+            }
             if driver is not None:
                 params["driver_number"] = driver
             samples = _parse(self.query("location", params), LocationSample.from_row, "location")
             logger.debug("location %s..%s: %d rows", lo, hi, len(samples))
             for s in samples:
-                unique[(s.time, s.driver)] = s
+                if start <= s.time <= end:
+                    unique[(s.time, s.driver)] = s
         return sorted(unique.values(), key=lambda s: (s.time, s.driver))
 
     def _windows(self, start: datetime, end: datetime) -> Iterator[tuple[datetime, datetime]]:
@@ -173,6 +206,6 @@ class OpenF1Client:
         if allowed is None:
             raise InvalidQueryError(f"unknown endpoint {endpoint}")
         for key in params:
-            field = key.rstrip("<>")
-            if field not in allowed:
-                raise InvalidQueryError(f"{endpoint}: unknown filter field {field!r}")
+            m = _FILTER_KEY.fullmatch(key)
+            if m is None or m["field"] not in allowed:
+                raise InvalidQueryError(f"{endpoint}: invalid filter {key!r}")

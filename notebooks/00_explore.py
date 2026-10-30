@@ -7,17 +7,12 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from pitwall.ingest.openf1 import BASE_URL, LocationSample, OpenF1Client
+from pitwall.ingest.openf1 import BASE_URL, OpenF1Client
 from pitwall.ingest.transport import CachedTransport, HttpTransport
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "data" / "cache" / "openf1"
 CAR = 16  # Leclerc
-
-
-def on_track(samples: list[LocationSample]) -> list[LocationSample]:
-    """(0, 0) means 'no position' (car in the garage or before the start)"""
-    return [s for s in samples if (s.x, s.y) != (0, 0)]
 
 
 def main() -> None:
@@ -51,12 +46,12 @@ def main() -> None:
         f"max {max(gaps):.1f}s, gaps > 1s: {sum(g > 1 for g in gaps)}"
     )
 
-    outline = on_track(trace)
+    outline = [s for s in trace if s.on_track]
     _fig, ax = plt.subplots(figsize=(9, 9))
     ax.plot([s.x for s in outline], [s.y for s in outline], color="lightgrey", lw=1, zorder=1)
 
     # window is sorted by time, so the last one wins
-    latest = {s.driver: s for s in on_track(window)}
+    latest = {s.driver: s for s in window if s.on_track}
     for num, s in latest.items():
         driver = drivers.get(num)
         colour = "#" + (driver.team_colour if driver and driver.team_colour else "888888")

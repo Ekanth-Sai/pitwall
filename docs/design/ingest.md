@@ -1,4 +1,4 @@
-# Ingest: OpenF1 client (P0.4)
+# Ingest: OpenF1 client (P0.4, laps + on_track in P0.7)
 
 ## Class diagram
 
@@ -30,6 +30,7 @@ classDiagram
         +query(endpoint, params) list~Row~
         +sessions(year, circuit, name) list~Session~
         +drivers(session_key) list~Driver~
+        +laps(session_key, driver) list~Lap~
         +locations(session_key, start, end, driver) list~LocationSample~
     }
     class Session {
@@ -37,9 +38,18 @@ classDiagram
     }
     class Driver {
         <<frozen dataclass>>
+        +team_colour: str or None
     }
     class LocationSample {
         <<frozen dataclass>>
+        +on_track() bool
+    }
+    class Lap {
+        <<frozen dataclass>>
+        +start: datetime or None
+        +duration: timedelta or None
+        +pit_out: bool
+        +end() datetime or None
     }
 
     Transport <|.. HttpTransport
@@ -48,6 +58,7 @@ classDiagram
     OpenF1Client --> Transport : depends on
     OpenF1Client ..> Session : builds
     OpenF1Client ..> Driver : builds
+    OpenF1Client ..> Lap : builds
     OpenF1Client ..> LocationSample : builds
     Transport ..> Response
 ```
@@ -106,3 +117,12 @@ sequenceDiagram
 7. **No printing in the library.** It uses logging; the caller decides output.
 8. **Composition at the edge.** The notebook wires CachedTransport(HttpTransport)
    into OpenF1Client; the client knows nothing about caching or httpx.
+9. **Null policy.** Identity fields (names, numbers) are strict: a null raises
+   SchemaError. Fields OpenF1 legitimately leaves null are typed `X | None`, so
+   mypy forces callers to handle them: `Driver.team_colour`, `Lap.start`,
+   `Lap.duration` (and so `Lap.end`). Lap timing is null on e.g. retirement laps.
+10. **Derived values are properties, not fields.** `Lap.end` is computed from
+    `start + duration`, so the three can never disagree; `LocationSample.on_track`
+    encodes OpenF1's "(0, 0) means no position" rule once, for every caller.
+11. **Pit laps.** OpenF1 flags only out-laps (`is_pit_out_lap`); the in-lap is the
+    lap before. `pit_out` is True only for a real JSON `true`, never for null.

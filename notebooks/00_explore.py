@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 from pitwall.ingest.openf1 import BASE_URL, OpenF1Client
 from pitwall.ingest.transport import CachedTransport, HttpTransport
+from pitwall.track.laps import in_laps, lap_samples, representative_lap
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "data" / "cache" / "openf1"
@@ -28,8 +29,9 @@ def main() -> None:
 
         # drivers (team colors, numbers, acronyms)
         drivers = {d.number: d for d in client.drivers(session.key)}
+        laps = client.laps(session.key, driver=CAR)
 
-        # one car's whole race trace = the circuit outline
+        # one car's whole race: sampling stats, and the source for the lap outline
         print(f"fetching car {CAR} locations")
         trace = client.locations(session.key, session.start, session.end, driver=CAR)
         if len(trace) < 2:
@@ -46,7 +48,14 @@ def main() -> None:
         f"max {max(gaps):.1f}s, gaps > 1s: {sum(g > 1 for g in gaps)}"
     )
 
-    outline = [s for s in trace if s.on_track]
+    lap = representative_lap(laps)
+    if lap is None:
+        raise SystemExit(f"No clean racing lap for car {CAR}")
+    outline = lap_samples(lap, trace)
+    print(
+        f"outline: lap {lap.number} ({lap.duration}), {len(outline)} samples; "
+        f"in-laps: {[x.number for x in in_laps(laps)]}"
+    )
     _fig, ax = plt.subplots(figsize=(9, 9))
     ax.plot([s.x for s in outline], [s.y for s in outline], color="lightgrey", lw=1, zorder=1)
 

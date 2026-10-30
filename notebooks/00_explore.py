@@ -9,6 +9,14 @@ import matplotlib.pyplot as plt
 
 from pitwall.ingest.openf1 import BASE_URL, OpenF1Client
 from pitwall.ingest.transport import CachedTransport, HttpTransport
+from pitwall.track.geometry import (
+    CIRCUIT_POINTS,
+    SMOOTH_WINDOW,
+    Point,
+    path_length,
+    resample,
+    smooth_loop,
+)
 from pitwall.track.laps import in_laps, lap_samples, representative_lap
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,8 +64,13 @@ def main() -> None:
         f"outline: lap {lap.number} ({lap.duration}), {len(outline)} samples; "
         f"in-laps: {[x.number for x in in_laps(laps)]}"
     )
+
+    raw: list[Point] = [(s.x, s.y) for s in outline]
+    circuit = smooth_loop(resample(raw, CIRCUIT_POINTS, closed=True), SMOOTH_WINDOW)
+    loop = [*circuit, circuit[0]]
+    print(f"circuit: {len(circuit)} points, {path_length(loop) / 10_000:.3f} km")
     _fig, ax = plt.subplots(figsize=(9, 9))
-    ax.plot([s.x for s in outline], [s.y for s in outline], color="lightgrey", lw=1, zorder=1)
+    ax.plot([x for x, _ in loop], [y for _, y in loop], color="lightgrey", lw=1, zorder=1)
 
     # window is sorted by time, so the last one wins
     latest = {s.driver: s for s in window if s.on_track}

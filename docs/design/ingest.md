@@ -126,3 +126,6 @@ sequenceDiagram
     encodes OpenF1's "(0, 0) means no position" rule once, for every caller.
 11. **Pit laps.** OpenF1 flags only out-laps (`is_pit_out_lap`); the in-lap is the
     lap before. `pit_out` is True only for a real JSON `true`, never for null.
+12. **Positions are decimetres.** `LocationSample.x/y/z` are kept as OpenF1's integers,
+    in decimetres (Monza lap 39 measures 5.749 km against the official 5.793 km; see
+    [track.md](track.md#units)). Converting to metres is left to whoever displays them.

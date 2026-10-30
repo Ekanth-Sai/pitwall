@@ -5,6 +5,7 @@
 | [architecture.md](architecture.md) | Whole system: ingest → log → processing → gateway → UI |
 | [dev-pipeline.md](dev-pipeline.md) | Local hooks, CI, PR flow |
 | [ingest.md](ingest.md) | P0.4 OpenF1 client, transports, error handling |
+| [track.md](track.md) | P0.7 circuit outline: lap selection, resampling, smoothing |
 | [security.md](security.md) | Security baseline (P0.5), threat model (from P4.7) |
 
 Planned: `event-log.md` (P2.1), `gateway.md` (P4.1).

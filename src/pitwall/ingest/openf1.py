@@ -122,6 +122,7 @@ class Driver:
 class LocationSample:
     time: datetime
     driver: int
+    # circuit coordinates in decimetres (Monza lap: 57,500 units = 5.75 km)
     x: int
     y: int
     z: int

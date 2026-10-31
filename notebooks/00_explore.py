@@ -17,7 +17,8 @@ from pitwall.track.geometry import (
     resample,
     smooth_loop,
 )
-from pitwall.track.laps import in_laps, lap_samples, representative_lap
+from pitwall.track.laps import in_laps, lap_samples, representative_lap, span_samples
+from pitwall.track.pitlane import PIT_POINTS, pit_lane
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "data" / "cache" / "openf1"
@@ -69,8 +70,21 @@ def main() -> None:
     circuit = smooth_loop(resample(raw, CIRCUIT_POINTS, closed=True), SMOOTH_WINDOW)
     loop = [*circuit, circuit[0]]
     print(f"circuit: {len(circuit)} points, {path_length(loop) / 10_000:.3f} km")
+    # pit lane: where the first stop's in-lap and out-lap leave the circuit
+    pit: list[Point] = []
+    if stops := in_laps(laps):
+        by_number = {x.number: x for x in laps}
+        pit_trace = span_samples(stops[0], by_number[stops[0].number + 1], trace)
+        lane = pit_lane([(s.x, s.y) for s in pit_trace], circuit)
+        if lane is not None:
+            pit = resample(lane, PIT_POINTS, closed=False)
+            print(f"pit lane: {len(pit)} points, {path_length(pit) / 10:.0f} m")
     _fig, ax = plt.subplots(figsize=(9, 9))
     ax.plot([x for x, _ in loop], [y for _, y in loop], color="lightgrey", lw=1, zorder=1)
+    if pit:
+        ax.plot(
+            [x for x, _ in pit], [y for _, y in pit], color="lightgrey", lw=1, ls="--", zorder=1
+        )
 
     # window is sorted by time, so the last one wins
     latest = {s.driver: s for s in window if s.on_track}

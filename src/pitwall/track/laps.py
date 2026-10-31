@@ -39,10 +39,25 @@ def representative_lap(laps: Sequence[Lap]) -> Lap | None:
 
 def lap_samples(lap: Lap, samples: Iterable[LocationSample]) -> list[LocationSample]:
     """The lap's driver's on-track samples in [start, end): consecutive laps never share one."""
-    start, end = lap.start, lap.end
-    if start is None or end is None:
-        raise ValueError(f"lap {lap.number} has no timing")
-    return [s for s in samples if s.driver == lap.driver and s.on_track and start <= s.time < end]
+    return span_samples(lap, lap, samples)
+
+
+def span_samples(first: Lap, last: Lap, samples: Iterable[LocationSample]) -> list[LocationSample]:
+    """On-track samples from the start of first to the end of last, example: an in-lap and out-lap
+
+    One time window, not lap_samples twice: OpenF1 lap times can overlap by ~0.1 s, so joining
+    two laps' samples could repeat one or put two out of order.
+    """
+    if first.driver != last.driver:
+        raise ValueError(f"laps of different drivers: {first.driver} and {last.driver}")
+    if last.number < first.number:
+        raise ValueError(f"lap {last.number} comes before lap {first.number}")
+    start, end = first.start, last.end
+    if start is None:
+        raise ValueError(f"lap {first.number} has no timing")
+    if end is None:
+        raise ValueError(f"lap {last.number} has no timing")
+    return [s for s in samples if s.driver == first.driver and s.on_track and start <= s.time < end]
 
 
 def _timed(laps: Iterable[Lap]) -> list[tuple[Lap, float]]:

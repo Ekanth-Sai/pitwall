@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pitwall.track.geometry import Point, path_length, resample, smooth_loop
+from pitwall.track.geometry import Point, nearest_on_loop, path_length, resample, smooth_loop
 
 # OpenF1 positions are integers in decimetres, a few km across
 coord = st.integers(-20_000, 20_000).map(float)
@@ -56,6 +56,23 @@ def test_path_length() -> None:
     assert path_length(SQUARE) == 30  # open: 3 sides
 
 
+@pytest.mark.parametrize(
+    ("p", "expected"),
+    [
+        ((5, -3), (5, 0)),  # beside a side: straight across
+        ((12, -4), (10, 0)),  # beyond a corner: the corner
+        ((-2, 4), (0, 4)),  # beside the closing side, from (0, 10) back to (0, 0)
+        ((5, 5), (5, 0)),  # the centre, equally near all four sides: the first one
+    ],
+)
+def test_nearest_on_loop(p: Point, expected: Point) -> None:
+    assert nearest_on_loop(p, SQUARE) == pytest.approx(expected)
+
+
+def test_nearest_skips_repeated_points() -> None:
+    assert nearest_on_loop((5, 5), [(0, 0), (0, 0), (10, 0)]) == pytest.approx((5, 0))
+
+
 # errors
 
 
@@ -79,6 +96,11 @@ def test_resample_rejects_bad_input(
 def test_smooth_rejects_bad_window(window: int, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         smooth_loop(SQUARE, window)
+
+
+def test_nearest_on_empty_loop_rejected() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        nearest_on_loop((0, 0), [])
 
 
 # properties
@@ -123,3 +145,14 @@ def test_smoothing_keeps_count_and_centroid(points: list[Point], window: int) ->
 @given(paths)
 def test_window_one_is_identity(points: list[Point]) -> None:
     assert smooth_loop(points, 1) == points
+
+
+@given(paths, point)
+def test_nearest_beats_every_vertex_and_midpoint(loop: list[Point], p: Point) -> None:
+    # vertices and segment midpoints all lie on the loop, so the nearest point can only be closer
+    midpoints = [
+        ((ax + bx) / 2, (ay + by) / 2)
+        for (ax, ay), (bx, by) in zip(loop, [*loop[1:], loop[0]], strict=True)
+    ]
+    q = nearest_on_loop(p, loop)
+    assert math.dist(p, q) <= min(math.dist(p, v) for v in [*loop, *midpoints]) + 1e-6

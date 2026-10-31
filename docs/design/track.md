@@ -1,6 +1,6 @@
 # Track: circuit outline from position data (P0.7)
 
-Built up part by part: lap selection (P0.7b), geometry (P0.7c). Pit lane (P0.7d),
+Built up part by part: lap selection (P0.7b), geometry (P0.7c), pit lane (P0.7d).
 `TrackOutline` (P0.7e) and the figure script (P0.7f) add their sections as they land.
 
 ## Pipeline
@@ -13,6 +13,13 @@ flowchart LR
     D --> E["resample closed, 500 points"]
     E --> F["smooth_loop, window 3"]
     F --> G["circuit outline"]
+    A --> H["in_laps: first pit stop"]
+    H --> I["span_samples: in-lap start to out-lap end"]
+    C --> I
+    I --> J["pit_lane: longest run off the circuit"]
+    G --> J
+    J --> K["resample open, 100 points"]
+    K --> L["pit lane path"]
 ```
 
 ## Units
@@ -126,6 +133,59 @@ up to 2 km, like OpenF1's) check what must hold for every path:
 | smoothing keeps the count and the centroid | each point appears in exactly `window` averages, each weighted 1/window |
 | window 1 is the identity | the average of one point is the point |
 
+## Pit lane (P0.7d)
+
+The circuit outline comes from a racing lap, so it never goes through the pit lane. The pit
+lane comes from a pit stop instead: the in-lap ends in the pit lane and the out-lap starts
+there.
+
+```mermaid
+flowchart LR
+    A["in-lap and out-lap samples"] --> B["distance of each to the circuit"]
+    B --> C["farther than 5 m?"]
+    C --> D["longest run of far samples"]
+    D --> E["add the samples either side, snapped onto the circuit"]
+    E --> F["pit lane: branches off and rejoins"]
+```
+
+**One time window for both laps.** `span_samples(in_lap, out_lap, ...)` takes the samples from
+the in-lap's start to the out-lap's end in one pass. Calling `lap_samples` twice and joining the
+results could repeat a sample or put two out of order, because OpenF1 lap times can overlap by
+about 0.1 s: lap 15's start plus its duration ends after lap 16's start.
+
+**Threshold, from real data** (Monza 2024, car 16, distance to the circuit outline):
+
+| Samples | Distance |
+|---|---|
+| Every racing-lap sample | at most 2.9 m |
+| The cold-tyre out-lap through the first chicane | up to 2.9 m |
+| Pit lane beside the main straight | 13 to 19 m |
+
+`PIT_OFFSET = 50` (5 m) sits between them with margin on both sides. Length sensitivity: 4 m
+gives 746 m, 5 m gives 707 m, 8 m gives 632 m and 10 m gives 587 m. Only the tapered entry and
+exit change; the lane itself is the same.
+
+**Longest run, not every far sample.** A car can briefly run wide (a lock-up, a missed
+chicane). A run by sample count favours the pit lane, which is long and includes the stationary
+box stop (10 identical samples at Monza).
+
+**Joining onto the circuit.** The sample just before the run is where the car left the circuit,
+and the one just after is where it rejoined. Both are projected onto the outline with
+`nearest_on_loop`, so the drawn pit lane touches the circuit exactly. At Monza the entry is
+abrupt: one 0.28 s sample interval goes from 0 to 12.7 m off the outline at the end of the
+Parabolica. The exit tapers off gradually over about 3 s, before the first chicane.
+
+**Open resampling.** The pit lane has two ends, so `resample(..., closed=False)` keeps both,
+with `PIT_POINTS = 100` (about 7 m apart over 707 m). It isn't smoothed: `smooth_loop` wraps
+around, which would pull the entry towards the exit. The box stop's repeated samples are
+zero-length segments, which resampling already skips.
+
+**`nearest_on_loop`** projects the point onto every segment of the loop (clamped to the
+segment's ends) and keeps the closest one. It's O(n) per point. For the 761 in-lap and out-lap
+samples against 500 circuit points, that's 0.52 s. This runs once per track and not at
+replay time, so it waits for the phase perf review. A spatial grid would make it about O(1)
+per point if it's ever needed.
+
 ## Decisions
 
 1. **Plain functions, not classes.** Geometry is stateless maths over point lists; the
@@ -133,5 +193,9 @@ up to 2 km, like OpenF1's) check what must hold for every path:
 2. **`closed` is keyword-only.** `resample(pts, 500, True)` hides what `True` means.
 3. **Tuning constants live in `geometry.py`**, each with its measured reason, not as magic
    numbers at the call site.
-4. **`ValueError` for bad arguments** (`n < 2`, even window, zero-length path): these are
-   caller bugs, not data problems from the world.
+4. **`ValueError` for bad arguments** (`n < 2`, even window, zero-length path, a
+   non-positive offset, laps of two drivers): these are caller bugs, not data problems from
+   the world.
+5. **"Not found" is `None`, not an exception.** `representative_lap` and `pit_lane` return
+   `None` when the data has no answer (no racing laps, the car never left the circuit). The
+   caller decides whether that matters; a track without a pit lane path still draws.

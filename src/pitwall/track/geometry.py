@@ -59,3 +59,20 @@ def smooth_loop(points: Sequence[Point], window: int) -> list[Point]:
         near = [points[(i + k) % n] for k in range(-half, half + 1)]
         out.append((sum(p[0] for p in near) / window, sum(p[1] for p in near) / window))
     return out
+
+
+def nearest_on_loop(p: Point, loop: Sequence[Point]) -> Point:
+    """The point on the closed polyline through loop that is closest to p."""
+    if not loop:
+        raise ValueError("loop is empty")
+    segments = zip(loop, [*loop[1:], loop[0]], strict=True)
+    return min((_nearest_on_segment(p, a, b) for a, b in segments), key=lambda q: math.dist(p, q))
+
+
+def _nearest_on_segment(p: Point, a: Point, b: Point) -> Point:
+    # project p onto the line through a and b, then clamp to the segment
+    (px, py), (ax, ay), (bx, by) = p, a, b
+    dx, dy = bx - ax, by - ay
+    length2 = dx * dx + dy * dy
+    t = 0.0 if length2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length2))
+    return (ax + t * dx, ay + t * dy)

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from pitwall.ingest.openf1 import Lap, LocationSample
-from pitwall.track.laps import in_laps, lap_samples, racing_laps, representative_lap
+from pitwall.track.laps import in_laps, lap_samples, racing_laps, representative_lap, span_samples
 
 T0 = datetime(2024, 9, 1, 13, 0, tzinfo=UTC)
 
@@ -108,3 +108,41 @@ def test_untimed_lap_cannot_be_sliced() -> None:
     lap = make_laps([None])[0]
     with pytest.raises(ValueError, match="no timing"):
         lap_samples(lap, [])
+
+
+# span_samples
+
+
+def test_span_covers_both_laps_in_one_window() -> None:
+    in_lap = make_laps([90])[0]
+    # OpenF1 laps can overlap by ~0.1 s; one window takes the shared sample once
+    out_lap = Lap(16, 2, T0 + timedelta(seconds=89.9), timedelta(seconds=105), pit_out=True)
+    times = [T0 + timedelta(seconds=s) for s in (0, 89.95, 150, 194.9)]
+    got = span_samples(in_lap, out_lap, [sample(t) for t in times])
+    assert [s.time for s in got] == times[:3]  # 194.9 is the out-lap's end: excluded
+
+
+@pytest.mark.parametrize(
+    ("first", "last", "message"),
+    [
+        (
+            Lap(16, 1, T0, timedelta(seconds=90), False),
+            Lap(1, 2, T0, None, False),
+            "different drivers",
+        ),
+        (Lap(16, 2, T0, timedelta(seconds=90), False), Lap(16, 1, T0, None, False), "comes before"),
+        (
+            Lap(16, 1, None, None, False),
+            Lap(16, 2, T0, timedelta(seconds=90), True),
+            "lap 1 has no timing",
+        ),
+        (
+            Lap(16, 1, T0, timedelta(seconds=90), False),
+            Lap(16, 2, T0, None, True),
+            "lap 2 has no timing",
+        ),
+    ],
+)
+def test_span_rejects_bad_laps(first: Lap, last: Lap, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        span_samples(first, last, [])

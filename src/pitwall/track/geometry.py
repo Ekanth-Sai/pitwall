@@ -3,7 +3,9 @@
 import bisect
 import itertools
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Self
 
 Point = tuple[float, float]
 
@@ -76,3 +78,49 @@ def _nearest_on_segment(p: Point, a: Point, b: Point) -> Point:
     length2 = dx * dx + dy * dy
     t = 0.0 if length2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length2))
     return (ax + t * dx, ay + t * dy)
+
+
+@dataclass(frozen=True)
+class Bounds:
+    min_x: float
+    min_y: float
+    max_x: float
+    max_y: float
+
+    @property
+    def width(self) -> float:
+        return self.max_x - self.min_x
+
+    @property
+    def height(self) -> float:
+        return self.max_y - self.min_y
+
+    @classmethod
+    def of(cls, points: Iterable[Point]) -> Self:
+        pts = list(points)
+        if not pts:
+            raise ValueError("no points to bound")
+        xs, ys = zip(*pts, strict=True)
+        return cls(min(xs), min(ys), max(xs), max(ys))
+
+
+def rotate(p: Point, degrees: float) -> Point:
+    """Rotate p counter-clockwise about the origin."""
+    a = math.radians(degrees)
+    c, s = math.cos(a), math.sin(a)
+    x, y = p
+    return (x * c - y * s, x * s + y * c)
+
+
+def principal_angle(points: Sequence[Point]) -> float:
+    """Direction of the points' long axis, in degrees from the x axis, in (-90, 90]."""
+    n = len(points)
+    if n < 2:
+        raise ValueError(f"need at least 2 points, got {n}")
+    mx = sum(x for x, _ in points) / n
+    my = sum(y for _, y in points) / n
+    sxx = sum((x - mx) ** 2 for x, _ in points)
+    syy = sum((y - my) ** 2 for _, y in points)
+    sxy = sum((x - mx) * (y - my) for x, y in points)
+    # the angle of the covariance matrix's main eigenvector
+    return math.degrees(0.5 * math.atan2(2 * sxy, sxx - syy))

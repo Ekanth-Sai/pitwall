@@ -4,7 +4,16 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pitwall.track.geometry import Point, nearest_on_loop, path_length, resample, smooth_loop
+from pitwall.track.geometry import (
+    Bounds,
+    Point,
+    nearest_on_loop,
+    path_length,
+    principal_angle,
+    resample,
+    rotate,
+    smooth_loop,
+)
 
 # OpenF1 positions are integers in decimetres, a few km across
 coord = st.integers(-20_000, 20_000).map(float)
@@ -73,6 +82,22 @@ def test_nearest_skips_repeated_points() -> None:
     assert nearest_on_loop((5, 5), [(0, 0), (0, 0), (10, 0)]) == pytest.approx((5, 0))
 
 
+def test_bounds() -> None:
+    b = Bounds.of([(1, 5), (-2, 3), (4, -1)])
+    assert (b.min_x, b.min_y, b.max_x, b.max_y) == (-2, -1, 4, 5)
+    assert (b.width, b.height) == (6, 6)
+
+
+def test_rotate_quarter_turn_counter_clockwise() -> None:
+    assert rotate((10, 0), 90) == pytest.approx((0, 10))
+
+
+@pytest.mark.parametrize("tilt", [-60, 0, 30, 89])
+def test_principal_angle_of_a_tilted_line(tilt: float) -> None:
+    line = [rotate((x, 0), tilt) for x in range(-50, 51)]
+    assert principal_angle(line) == pytest.approx(tilt)
+
+
 # errors
 
 
@@ -101,6 +126,16 @@ def test_smooth_rejects_bad_window(window: int, message: str) -> None:
 def test_nearest_on_empty_loop_rejected() -> None:
     with pytest.raises(ValueError, match="empty"):
         nearest_on_loop((0, 0), [])
+
+
+def test_bounds_of_nothing_rejected() -> None:
+    with pytest.raises(ValueError, match="no points"):
+        Bounds.of([])
+
+
+def test_principal_angle_needs_two_points() -> None:
+    with pytest.raises(ValueError, match="at least 2"):
+        principal_angle([(0, 0)])
 
 
 # properties

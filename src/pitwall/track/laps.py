@@ -2,6 +2,7 @@
 
 import statistics
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 
 from pitwall.ingest.openf1 import Lap, LocationSample
 
@@ -58,6 +59,11 @@ def span_samples(first: Lap, last: Lap, samples: Iterable[LocationSample]) -> li
     if end is None:
         raise ValueError(f"lap {last.number} has no timing")
     return [s for s in samples if s.driver == first.driver and s.on_track and start <= s.time < end]
+
+
+def last_lap_end(laps: Iterable[Lap]) -> datetime | None:
+    """When the last timed lap finished: the race's real end, not the scheduled one."""
+    return max((lap.end for lap in laps if lap.end is not None), default=None)
 
 
 def _timed(laps: Iterable[Lap]) -> list[tuple[Lap, float]]:

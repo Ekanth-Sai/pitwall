@@ -1,7 +1,7 @@
 # Track: circuit outline from position data (P0.7)
 
-Built up part by part: lap selection (P0.7b), geometry (P0.7c), pit lane (P0.7d).
-`TrackOutline` (P0.7e) and the figure script (P0.7f) add their sections as they land.
+Built up part by part: lap selection (P0.7b), geometry (P0.7c), pit lane (P0.7d),
+`TrackOutline` (P0.7e). The figure script (P0.7f) adds its section when it lands.
 
 ## Pipeline
 
@@ -186,6 +186,109 @@ samples against 500 circuit points, that's 0.52 s. This runs once per track and 
 replay time, so it waits for the phase perf review. A spatial grid would make it about O(1)
 per point if it's ever needed.
 
+## TrackOutline (P0.7e)
+
+The one object the rest of the system uses: everything above is how it gets built.
+
+```mermaid
+classDiagram
+    class TrackOutline {
+        <<frozen dataclass>>
+        +circuit: tuple of Point
+        +pit_lane: tuple of Point or None
+        +rotation: float
+        +bounds() Bounds
+        +build(laps, samples)$ TrackOutline
+        +to_json() str
+        +from_json(text)$ TrackOutline
+    }
+    class Bounds {
+        <<frozen dataclass>>
+        +min_x, min_y, max_x, max_y
+        +width() float
+        +height() float
+        +of(points)$ Bounds
+    }
+    TrackOutline ..> Bounds : bounds
+    TrackOutline ..> InsufficientDataError : build raises
+    TrackOutline ..> SchemaError : from_json raises
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant T as TrackOutline.build
+    participant L as track.laps
+    participant G as geometry and pitlane
+
+    C->>T: build(laps, samples)
+    T->>L: representative_lap(laps)
+    alt no racing lap, or under 100 samples
+        T-->>C: raise InsufficientDataError
+    end
+    T->>G: resample closed, smooth_loop
+    loop each pit stop, in order
+        T->>L: span_samples(in-lap, out-lap)
+        T->>G: pit_lane, then resample open
+        Note over T: first stop with a clear path wins; untimed stops are skipped
+    end
+    T->>G: principal_angle(circuit)
+    T-->>C: TrackOutline(circuit, pit_lane or None, rotation)
+```
+
+**Coordinates stay OpenF1's** (decimetres, y up). The outline is stored unrotated, and the
+cars arrive unrotated, so both go through the same transform at draw time. Storing a rotated
+outline would force every car position through a different path than the track.
+
+**Rotation** lays the track's long axis horizontal, because screens are landscape. The long
+axis is the principal axis of the circuit points: the main eigenvector of their covariance
+matrix, whose angle is `atan2(2 sxy, sxx - syy) / 2`. `rotation` is minus that angle, in
+degrees counter-clockwise about the origin. Monza: **-64.63 deg**, giving a 2.44 : 1 landscape
+outline.
+
+**Bounds** is a property, not a field (like `Lap.end`): it's the bounding box *after*
+rotation, i.e. what the SVG viewBox must cover. It's derived, so it can't disagree with the
+points. The y-down flip of SVG is the frontend's job (P1.3).
+
+**Rounding to 0.1 dm (1 cm)** at build time. That's far below the data's precision, keeps the
+JSON short (Monza: 10.1 kB for 600 points), and makes the JSON round-trip exact: what
+`from_json` reads back is equal to what was built.
+
+### JSON format
+
+```json
+{"format":1,"rotation":-64.63,"bounds":[-5320.7,-4484.3,18726.7,5356.4],
+ "circuit":[[-1333.8,-219.0],...],"pit_lane":[[...],...]}
+```
+
+| Key | Meaning |
+|---|---|
+| `format` | layout version; `from_json` rejects any other value |
+| `rotation` | degrees counter-clockwise about the origin |
+| `bounds` | `[min_x, min_y, max_x, max_y]` after rotation; written for the frontend, recomputed on read |
+| `circuit` | closed loop, first point not repeated |
+| `pit_lane` | open path, or `null` |
+
+**`from_json` validates at the boundary.** Every problem becomes a `SchemaError`, from the
+same places a bad OpenF1 row would:
+
+| Input | Why it's rejected |
+|---|---|
+| not JSON, or not an object | |
+| `NaN`, `Infinity` | Python's `json.loads` accepts them by default; `parse_constant` rejects them |
+| unknown `format` | a newer or older layout must not be half-read |
+| missing key, a point that isn't `[x, y]` | |
+| `true` as a coordinate | `bool` is a subclass of `int` in Python, so `isinstance(True, int)` passes |
+| circuit under 3 points, pit lane under 2 | `__post_init__` invariants, the same ones `build` must satisfy |
+
+## Race end
+
+`session.end` is the *scheduled* end (15:00 for Monza). `last_lap_end(laps)` is when the
+car's last timed lap actually finished (14:18:15). The notebook fetches locations only up to
+then: 18,119 samples instead of 18,636, and 8 location requests instead of 12. Three of the
+four requests it no longer makes came back empty (404); the fourth held only the cool-down
+lap after the flag, which nothing here uses.
+
 ## Decisions
 
 1. **Plain functions, not classes.** Geometry is stateless maths over point lists; the
@@ -199,3 +302,10 @@ per point if it's ever needed.
 5. **"Not found" is `None`, not an exception.** `representative_lap` and `pit_lane` return
    `None` when the data has no answer (no racing laps, the car never left the circuit). The
    caller decides whether that matters; a track without a pit lane path still draws.
+6. **`InsufficientDataError` when the data can't answer.** `TrackOutline.build` has no
+   useful `None` to return: without a circuit there is no outline. Well-formed data that
+   can't produce one (no racing lap, too few samples) is a world problem, so it's a
+   `PitwallError`, not a `ValueError`.
+7. **Invariants in `__post_init__`.** A `TrackOutline` with a 2-point circuit can't be built
+   by any path: not `build`, not `from_json`, not a direct constructor call.
+8. **Versioned JSON.** `format` lets P1+ change the layout without old files being misread.

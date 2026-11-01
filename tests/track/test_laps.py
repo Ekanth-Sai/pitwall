@@ -4,7 +4,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from pitwall.ingest.openf1 import Lap, LocationSample
-from pitwall.track.laps import in_laps, lap_samples, racing_laps, representative_lap, span_samples
+from pitwall.track.laps import (
+    in_laps,
+    lap_samples,
+    last_lap_end,
+    racing_laps,
+    representative_lap,
+    span_samples,
+)
 
 T0 = datetime(2024, 9, 1, 13, 0, tzinfo=UTC)
 
@@ -146,3 +153,15 @@ def test_span_covers_both_laps_in_one_window() -> None:
 def test_span_rejects_bad_laps(first: Lap, last: Lap, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         span_samples(first, last, [])
+
+
+# last_lap_end
+
+
+def test_last_lap_end_skips_untimed_laps() -> None:
+    # laps 1-2 end at 85 s and 171 s; lap 3 has no timing (example: a retirement)
+    assert last_lap_end(make_laps([85, 86, None])) == T0 + timedelta(seconds=171)
+
+
+def test_no_timed_laps_no_end() -> None:
+    assert last_lap_end(make_laps([None])) is None

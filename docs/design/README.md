@@ -10,6 +10,7 @@
 
 Planned: `event-log.md` (P2.1), `gateway.md` (P4.1).
 Phase write-ups live in `docs/phases/`, generated figures in `docs/figures/`.
+Dates, sprint plan and velocity log: [../schedule.md](../schedule.md).
 
 ## Definition of Done (every step)
 

@@ -70,7 +70,7 @@ class CachedTransport:
 
     def _path(self, endpoint: str, params: Params) -> Path:
         key = json.dumps(params, sort_keys=True)
-        digest = hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:16]
+        digest = hashlib.sha256(key.encode(), usedforsecurity=False).hexdigest()[:16]
         return self._dir / endpoint / f"{digest}.json"
 
     @staticmethod

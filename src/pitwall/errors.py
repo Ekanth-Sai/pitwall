@@ -17,3 +17,7 @@ class InvalidQueryError(PitwallError):
 
 class SchemaError(PitwallError):
     """Data from a source did not have the expected shape"""
+
+
+class InsufficientDataError(PitwallError):
+    """The data is well-formed but can't answer the question, example: no clean lap to draw"""

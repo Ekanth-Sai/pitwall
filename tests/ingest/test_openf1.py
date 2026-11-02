@@ -22,6 +22,22 @@ def loc(date: str, driver: int = 16, x: int = 1, y: int = 2) -> Row:
     return {"date": date, "driver_number": driver, "x": x, "y": y, "z": 0}
 
 
+def lap(
+    number: int,
+    driver: int = 16,
+    start: str | None = "2024-09-01T13:05:03+00:00",
+    duration: float | None = 85.396,
+    pit_out: bool | None = False,
+) -> Row:
+    return {
+        "driver_number": driver,
+        "lap_number": number,
+        "date_start": start,
+        "lap_duration": duration,
+        "is_pit_out_lap": pit_out,
+    }
+
+
 class FakeTransport:
     def __init__(self, handler: Callable[[str, Params], Response]) -> None:
         self.handler = handler
@@ -61,6 +77,12 @@ def test_invalid_query_rejected_before_request(endpoint: str, params: Params) ->
 def test_operator_suffixes_are_allowed() -> None:
     client, fake = client_returning(ok([]))
     client.query("location", {"date>": "a", "date<": "b"})
+    assert len(fake.calls) == 1
+
+
+def test_field_names_with_digits_are_allowed() -> None:
+    client, fake = client_returning(ok([]))
+    client.query("laps", {"duration_sector_1<": 30, "i1_speed>": 300})
     assert len(fake.calls) == 1
 
 
@@ -234,3 +256,58 @@ def test_end_before_start_rejected() -> None:
 def test_chunk_must_be_positive() -> None:
     with pytest.raises(ValueError, match="chunk must be positive"):
         OpenF1Client(FakeTransport(lambda _e, _p: NOT_FOUND), chunk=timedelta(0))
+
+
+# laps
+
+
+def test_laps_parsed_and_sorted() -> None:
+    rows = [lap(3, driver=16), lap(2, driver=16), lap(1, driver=1, pit_out=True)]
+    client, _ = client_returning(ok(rows))
+    laps = client.laps(9590)
+    assert [(x.driver, x.number) for x in laps] == [(1, 1), (16, 2), (16, 3)]
+    assert laps[0].pit_out is True
+    second = laps[1]
+    assert second.start == datetime(2024, 9, 1, 13, 5, 3, tzinfo=UTC)
+    assert second.duration == timedelta(seconds=85.396)
+    assert second.end == second.start + timedelta(seconds=85.396)
+
+
+@pytest.mark.parametrize(
+    ("start", "duration"),
+    [(None, 85.396), ("2024-09-01T13:05:03+00:00", None), (None, None)],
+)
+def test_lap_null_timing_gives_no_end(start: str | None, duration: float | None) -> None:
+    client, _ = client_returning(ok([lap(1, start=start, duration=duration, pit_out=None)]))
+    (only,) = client.laps(9590)
+    assert only.end is None
+    assert only.pit_out is False
+
+
+def test_laps_driver_filter_passed_through() -> None:
+    client, fake = client_returning(ok([]))
+    client.laps(9590, driver=16)
+    assert fake.calls == [("laps", {"session_key": 9590, "driver_number": 16})]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {k: v for k, v in lap(1).items() if k != "lap_number"},  # missing field
+        lap(1, duration="fast"),  # type: ignore[arg-type]
+        lap(1, start="not a date"),
+    ],
+)
+def test_bad_lap_row_raises_schema_error(row: Row) -> None:
+    client, _ = client_returning(ok([row]))
+    with pytest.raises(SchemaError, match="laps"):
+        client.laps(9590)
+
+
+@pytest.mark.parametrize(
+    ("x", "y", "expected"),
+    [(0, 0, False), (0, 5, True), (5, 0, True), (-120, 340, True)],
+)
+def test_on_track_only_excludes_origin(x: int, y: int, expected: bool) -> None:
+    sample = LocationSample(time=T0, driver=16, x=x, y=y, z=0)
+    assert sample.on_track is expected

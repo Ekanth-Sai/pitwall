@@ -20,7 +20,7 @@ _PAD = timedelta(seconds=1)
 Row = dict[str, Any]
 
 # A filter key is a field name, optionally followed by one comparison operator
-_FILTER_KEY = re.compile(r"(?P<field>[a-z_]+)(?P<op>[<>])?")
+_FILTER_KEY = re.compile(r"(?P<field>[a-z0-9_]+)(?P<op>[<>])?")
 
 # Filterable fields per endpoint. OpenF1 answers an unknown field with the same 404
 # as "no results", so typos must be rejected before the request is sent.
@@ -58,6 +58,23 @@ FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "location": frozenset({"session_key", "meeting_key", "driver_number", "date", "x", "y", "z"}),
+    "laps": frozenset(
+        {
+            "session_key",
+            "meeting_key",
+            "driver_number",
+            "lap_number",
+            "date_start",
+            "lap_duration",
+            "is_pit_out_lap",
+            "duration_sector_1",
+            "duration_sector_2",
+            "duration_sector_3",
+            "i1_speed",
+            "i2_speed",
+            "st_speed",
+        }
+    ),
 }
 
 
@@ -105,6 +122,7 @@ class Driver:
 class LocationSample:
     time: datetime
     driver: int
+    # circuit coordinates in decimetres (Monza lap: 57,500 units = 5.75 km)
     x: int
     y: int
     z: int
@@ -119,9 +137,40 @@ class LocationSample:
             z=int(row["z"]),
         )
 
+    @property
+    def on_track(self) -> bool:
+        """OpenF1 sends (0, 0) when it has no position (garage, before the start)."""
+        return (self.x, self.y) != (0, 0)
+
+
+@dataclass(frozen=True)
+class Lap:
+    driver: int
+    number: int
+    start: datetime | None  # OpenF1 leaves timing null on some laps (example: retirements)
+    duration: timedelta | None
+    pit_out: bool  # only out-laps are flagged; the in-lap is the lap before
+
+    @property
+    def end(self) -> datetime | None:
+        if self.start is None or self.duration is None:
+            return None
+        return self.start + self.duration
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        start, duration = row["date_start"], row["lap_duration"]
+        return cls(
+            driver=int(row["driver_number"]),
+            number=int(row["lap_number"]),
+            start=None if start is None else datetime.fromisoformat(start),
+            duration=None if duration is None else timedelta(seconds=float(duration)),
+            pit_out=row["is_pit_out_lap"] is True,
+        )
+
 
 def _text(value: object) -> str:
-    """Strict str(): JSON null must not become the strinf 'None'."""
+    """Strict str(): JSON null must not become the string 'None'."""
     if not isinstance(value, str):
         raise TypeError(f"expected a string, got {type(value).__name__}")
     return value
@@ -170,6 +219,13 @@ class OpenF1Client:
     def drivers(self, session_key: int) -> list[Driver]:
         rows = self.query("drivers", {"session_key": session_key})
         return _parse(rows, Driver.from_row, "drivers")
+
+    def laps(self, session_key: int, driver: int | None = None) -> list[Lap]:
+        params: Params = {"session_key": session_key}
+        if driver is not None:
+            params["driver_number"] = driver
+        laps = _parse(self.query("laps", params), Lap.from_row, "laps")
+        return sorted(laps, key=lambda lap: (lap.driver, lap.number))
 
     def locations(
         self, session_key: int, start: datetime, end: datetime, driver: int | None = None

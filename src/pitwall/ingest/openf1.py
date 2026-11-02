@@ -20,7 +20,7 @@ _PAD = timedelta(seconds=1)
 Row = dict[str, Any]
 
 # A filter key is a field name, optionally followed by one comparison operator
-_FILTER_KEY = re.compile(r"(?P<field>[a-z_]+)(?P<op>[<>])?")
+_FILTER_KEY = re.compile(r"(?P<field>[a-z0-9_]+)(?P<op>[<>])?")
 
 # Filterable fields per endpoint. OpenF1 answers an unknown field with the same 404
 # as "no results", so typos must be rejected before the request is sent.
@@ -170,7 +170,7 @@ class Lap:
 
 
 def _text(value: object) -> str:
-    """Strict str(): JSON null must not become the strinf 'None'."""
+    """Strict str(): JSON null must not become the string 'None'."""
     if not isinstance(value, str):
         raise TypeError(f"expected a string, got {type(value).__name__}")
     return value

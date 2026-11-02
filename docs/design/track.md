@@ -13,10 +13,10 @@ flowchart LR
     D --> E["resample closed, 500 points"]
     E --> F["smooth_loop, window 3"]
     F --> G["circuit outline"]
-    A --> H["in_laps: first pit stop"]
+    A --> H["pit_stops: timed in-lap and out-lap pairs"]
     H --> I["span_samples: in-lap start to out-lap end"]
     C --> I
-    I --> J["pit_lane: longest run off the circuit"]
+    I --> J["pit_lane: longest run off the circuit, 20 samples or more"]
     G --> J
     J --> K["resample open, 100 points"]
     K --> L["pit lane path"]
@@ -93,7 +93,9 @@ flowchart TB
 
 The lap's samples stop about 40 m (397 units) short of where they started: two samples at
 around 300 km/h. The closed mode joins that gap, so the outline has no break on the
-start/finish straight.
+start/finish straight. The gap is never negative: on all 50 of car 16's racing laps the last
+sample is short of the first, never past it, so the closing segment can't double back on the
+straight (checked in P0.7g, because lap times overlap by about 0.1 s; see the pit lane section).
 
 **Repeated samples:** a stopped or crawling car sends the same position twice, giving a
 zero-length segment. Interpolation then uses `t = 0` instead of dividing by zero.
@@ -169,6 +171,25 @@ exit change; the lane itself is the same.
 chicane). A run by sample count favours the pit lane, which is long and includes the stationary
 box stop (10 identical samples at Monza).
 
+**At least 20 samples in a row** (`MIN_PIT_RUN`). One stray sample off the outline, from a
+GPS spike or a wide moment, would otherwise count as a pit lane, and `TrackOutline.build`
+would draw it instead of trying the next stop. Real stops are far longer:
+
+| Race, car | Stop after lap | Samples above 5 m |
+|---|---|---|
+| Monza 2024, 16 | 15 | 115 |
+| Singapore 2024, 16 | 36 | 142 |
+| Las Vegas 2023, 1 | 16, 26 | 117, 101 |
+
+20 samples is about 5 s at 4 Hz, a fifth of the shortest one. Racing laps on all three stay
+within 3.0 m of their outline, so none comes near 5 m.
+
+**Which stop.** `pit_stops(laps)` pairs each in-lap with its out-lap and drops stops without
+timing, which can't be placed in time. `pit_stop(laps, samples, circuit)` returns the first
+stop whose samples give a clear pit lane, as a `PitStop` (its samples and the lane as driven).
+`TrackOutline.build` and the figures script both use it, so the figure always shows the stop
+the outline was drawn from.
+
 **Joining onto the circuit.** The sample just before the run is where the car left the circuit,
 and the one just after is where it rejoined. Both are projected onto the outline with
 `nearest_on_loop`, so the drawn pit lane touches the circuit exactly. At Monza the entry is
@@ -182,9 +203,10 @@ zero-length segments, which resampling already skips.
 
 **`nearest_on_loop`** projects the point onto every segment of the loop (clamped to the
 segment's ends) and keeps the closest one. It's O(n) per point. For the 761 in-lap and out-lap
-samples against 500 circuit points, that's 0.52 s. This runs once per track and not at
-replay time, so it waits for the phase perf review. A spatial grid would make it about O(1)
-per point if it's ever needed.
+samples against 500 circuit points, that's 0.52 s. The whole `TrackOutline.build` takes 0.43 s
+(Monza), 0.48 s (Singapore) and 0.53 s (Las Vegas). This runs once per track and not at replay
+time, so it waits for the phase perf review. A spatial grid would make it about O(1) per point
+if it's ever needed.
 
 ## TrackOutline (P0.7e)
 
@@ -227,11 +249,13 @@ sequenceDiagram
         T-->>C: raise InsufficientDataError
     end
     T->>G: resample closed, smooth_loop
-    loop each pit stop, in order
-        T->>L: span_samples(in-lap, out-lap)
-        T->>G: pit_lane, then resample open
-        Note over T: first stop with a clear path wins; untimed stops are skipped
+    T->>G: pit_stop(laps, samples, circuit)
+    loop each timed stop from pit_stops, in order
+        G->>L: span_samples(in-lap, out-lap)
+        G->>G: pit_lane, 20 samples or more off the circuit
+        Note over G: the first stop with a clear path wins
     end
+    T->>G: resample the lane open, 100 points
     T->>G: principal_angle(circuit)
     T-->>C: TrackOutline(circuit, pit_lane or None, rotation)
 ```
@@ -276,7 +300,8 @@ same places a bad OpenF1 row would:
 |---|---|
 | not JSON, or not an object | |
 | `NaN`, `Infinity` | Python's `json.loads` accepts them by default; `parse_constant` rejects them |
-| unknown `format` | a newer or older layout must not be half-read |
+| `1e999`, or an integer with 400 digits | the first overflows to `inf` without going through `parse_constant`; the second can't become a float (`OverflowError`) |
+| unknown `format`, or `true` or `1.0` | a newer or older layout must not be half-read; `true == 1` and `1.0 == 1` in Python, so the check is on the type too |
 | missing key, a point that isn't `[x, y]` | |
 | `true` as a coordinate | `bool` is a subclass of `int` in Python, so `isinstance(True, int)` passes |
 | circuit under 3 points, pit lane under 2 | `__post_init__` invariants, the same ones `build` must satisfy |
@@ -298,7 +323,7 @@ into `docs/figures/`. The data, car and constants are the same as everywhere abo
 flowchart LR
     A["fetch: Monza 2024, car 16, cached"] --> B["TrackOutline.build"]
     A --> C["representative_lap, lap_samples"]
-    A --> D["in_laps, span_samples"]
+    A --> D["pit_stop: the stop build used"]
     B --> E["Plotter: rotate, decimetres to metres"]
     C --> F["outline_figure"]
     D --> G["pit_figure"]
@@ -346,6 +371,9 @@ circuit, over 195 s. This is the evidence for `PIT_OFFSET`:
 - **Drawn in the outline's rotated frame, in metres.** It's the view the frontend will show,
   through the same `rotate` and `rotation`.
 - **Insets go in empty space added under the map** (`room_below`), so they never hide track.
+- **The pit figure uses the stop the outline used** (`pit_stop`), not just the first in-lap: if
+  that one were untimed or unclear, the figure would otherwise show a different stop than the
+  lane drawn over it.
 - **Zoom targets come from the data:** the closest pair of samples and the farthest pit sample.
   No coordinates are hard-coded, so the script still works for another car or circuit.
 - **Reproducible.** The same input gives byte-identical PNGs. The `Software` tag is stripped,

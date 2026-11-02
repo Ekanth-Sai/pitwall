@@ -80,6 +80,12 @@ def test_operator_suffixes_are_allowed() -> None:
     assert len(fake.calls) == 1
 
 
+def test_field_names_with_digits_are_allowed() -> None:
+    client, fake = client_returning(ok([]))
+    client.query("laps", {"duration_sector_1<": 30, "i1_speed>": 300})
+    assert len(fake.calls) == 1
+
+
 # response handling
 
 

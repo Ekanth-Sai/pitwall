@@ -1,6 +1,7 @@
 """TrackOutline: the circuit and pit lane drawn under the cars, built once per track."""
 
 import json
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Self
@@ -17,8 +18,8 @@ from pitwall.track.geometry import (
     rotate,
     smooth_loop,
 )
-from pitwall.track.laps import in_laps, lap_samples, representative_lap, span_samples
-from pitwall.track.pitlane import PIT_POINTS, pit_lane
+from pitwall.track.laps import lap_samples, representative_lap
+from pitwall.track.pitlane import PIT_POINTS, pit_stop
 
 FORMAT = 1  # bump when the JSON layout changes
 MIN_LAP_SAMPLES = 100  # an ~80 s lap at ~4 Hz has 300+; far fewer means positions are missing
@@ -59,7 +60,8 @@ class TrackOutline:
                 f"lap {lap.number} has {len(raw)} position samples, need {MIN_LAP_SAMPLES}"
             )
         circuit = smooth_loop(resample(raw, CIRCUIT_POINTS, closed=True), SMOOTH_WINDOW)
-        pit = _pit_lane(laps, samples, circuit)
+        stop = pit_stop(laps, samples, circuit)
+        pit = None if stop is None else resample(stop.lane, PIT_POINTS, closed=False)
         return cls(
             circuit=_rounded(circuit),
             pit_lane=None if pit is None else _rounded(pit),
@@ -86,8 +88,9 @@ class TrackOutline:
             raise SchemaError(f"track outline is not valid JSON: {e}") from e
         if not isinstance(data, dict):
             raise SchemaError(f"track outline: expected an object, got {type(data).__name__}")
-        if data.get("format") != FORMAT:
-            raise SchemaError(f"track outline format {data.get('format')!r}, expected {FORMAT}")
+        version = data.get("format")
+        if type(version) is not int or version != FORMAT:  # not true or 1.0: those pass == 1
+            raise SchemaError(f"track outline format {version!r}, expected {FORMAT}")
         try:
             pit = data["pit_lane"]
             return cls(
@@ -95,24 +98,8 @@ class TrackOutline:
                 pit_lane=None if pit is None else _points(pit),
                 rotation=_number(data["rotation"]),
             )
-        except (KeyError, TypeError, ValueError) as e:
+        except (KeyError, TypeError, ValueError, OverflowError) as e:
             raise SchemaError(f"track outline: unexpected shape: {e!r}") from e
-
-
-def _pit_lane(
-    laps: Sequence[Lap], samples: Sequence[LocationSample], circuit: Sequence[Point]
-) -> list[Point] | None:
-    """The first pit stop that gives a clear pit lane path; None if none does."""
-    by_number = {lap.number: lap for lap in laps}
-    for in_lap in in_laps(laps):
-        out_lap = by_number[in_lap.number + 1]
-        if in_lap.start is None or out_lap.end is None:
-            continue  # untimed: the stop can't be placed in time
-        points = [(s.x, s.y) for s in span_samples(in_lap, out_lap, samples)]
-        lane = pit_lane(points, circuit)
-        if lane is not None:
-            return resample(lane, PIT_POINTS, closed=False)
-    return None
 
 
 def _rounded(points: Sequence[Point]) -> tuple[Point, ...]:
@@ -136,7 +123,11 @@ def _number(value: object) -> float:
     # bool is a subclass of int in Python, but true is not a coordinate
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise TypeError(f"expected a number, got {type(value).__name__}")
-    return float(value)
+    number = float(value)  # OverflowError for an int too big for a float
+    # parse_constant stops NaN and Infinity, but 1e999 overflows to inf on its own
+    if not math.isfinite(number):
+        raise ValueError(f"expected a finite number, got {value!r}")
+    return number
 
 
 def _reject_constant(name: str) -> Any:

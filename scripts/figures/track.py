@@ -15,9 +15,9 @@ from matplotlib.figure import Figure
 from pitwall.ingest.openf1 import BASE_URL, Lap, LocationSample, OpenF1Client
 from pitwall.ingest.transport import CachedTransport, HttpTransport
 from pitwall.track.geometry import Bounds, Point, nearest_on_loop, rotate
-from pitwall.track.laps import in_laps, lap_samples, last_lap_end, representative_lap, span_samples
+from pitwall.track.laps import lap_samples, last_lap_end, representative_lap
 from pitwall.track.outline import TrackOutline
-from pitwall.track.pitlane import PIT_OFFSET
+from pitwall.track.pitlane import PIT_OFFSET, pit_stop
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "data" / "cache" / "openf1"
@@ -163,13 +163,12 @@ def main() -> None:
     plot = Plotter(track)
 
     lap = representative_lap(laps)
-    stops = in_laps(laps)
-    if lap is None or not stops:
+    stop = pit_stop(laps, samples, track.circuit)  # the stop the pit lane was drawn from
+    if lap is None or stop is None:
         raise SystemExit(f"car {CAR} needs a racing lap and a pit stop")
-    out_lap = next(x for x in laps if x.number == stops[0].number + 1)
     figures = {
         "track_outline.png": outline_figure(plot, lap, xy(lap_samples(lap, samples))),
-        "track_pit_lane.png": pit_figure(plot, span_samples(stops[0], out_lap, samples)),
+        "track_pit_lane.png": pit_figure(plot, stop.samples),
     }
 
     OUT.mkdir(parents=True, exist_ok=True)

@@ -17,6 +17,13 @@ def in_laps(laps: Sequence[Lap]) -> list[Lap]:
     return [lap for lap in laps if lap.number + 1 in out]
 
 
+def pit_stops(laps: Sequence[Lap]) -> list[tuple[Lap, Lap]]:
+    """(in-lap, out-lap) for each stop with timing; an untimed stop can't be placed in time"""
+    by_number = {lap.number: lap for lap in laps}
+    stops = [(lap, by_number[lap.number + 1]) for lap in in_laps(laps)]
+    return [(i, o) for i, o in stops if i.start is not None and o.end is not None]
+
+
 def racing_laps(laps: Sequence[Lap], slow_factor: float = SLOW_FACTOR) -> list[Lap]:
     """Timed laps at racing speed: not lap 1, not pit in/out, not slow (SC/VSC)"""
     if slow_factor < 1:

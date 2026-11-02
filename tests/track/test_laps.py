@@ -8,6 +8,7 @@ from pitwall.track.laps import (
     in_laps,
     lap_samples,
     last_lap_end,
+    pit_stops,
     racing_laps,
     representative_lap,
     span_samples,
@@ -165,3 +166,9 @@ def test_last_lap_end_skips_untimed_laps() -> None:
 
 def test_no_timed_laps_no_end() -> None:
     assert last_lap_end(make_laps([None])) is None
+
+
+def test_pit_stops_pair_each_in_lap_with_its_out_lap() -> None:
+    laps = make_laps([88, 105, 95, 85, 104, None, 85], pit_out={3, 6})
+    # the second stop's out-lap is untimed, so only the first can be placed in time
+    assert [(i.number, o.number) for i, o in pit_stops(laps)] == [(2, 3)]

@@ -1,7 +1,7 @@
 # Track: circuit outline from position data (P0.7)
 
 Built up part by part: lap selection (P0.7b), geometry (P0.7c), pit lane (P0.7d),
-`TrackOutline` (P0.7e). The figure script (P0.7f) adds its section when it lands.
+`TrackOutline` (P0.7e), figures (P0.7f).
 
 ## Pipeline
 
@@ -288,6 +288,71 @@ car's last timed lap actually finished (14:18:15). The notebook fetches location
 then: 18,119 samples instead of 18,636, and 8 location requests instead of 12. Three of the
 four requests it no longer makes came back empty (404); the fourth held only the cool-down
 lap after the flag, which nothing here uses.
+
+## Figures (P0.7f)
+
+`scripts/figures/track.py` (`make figures`) draws both figures from the cached OpenF1 data
+into `docs/figures/`. The data, car and constants are the same as everywhere above.
+
+```mermaid
+flowchart LR
+    A["fetch: Monza 2024, car 16, cached"] --> B["TrackOutline.build"]
+    A --> C["representative_lap, lap_samples"]
+    A --> D["in_laps, span_samples"]
+    B --> E["Plotter: rotate, decimetres to metres"]
+    C --> F["outline_figure"]
+    D --> G["pit_figure"]
+    E --> F
+    E --> G
+    F --> H["track_outline.png"]
+    G --> I["track_pit_lane.png"]
+```
+
+### Circuit outline
+
+![Lap 39 samples against the 500-point outline, with the first chicane zoomed in](../figures/track_outline.png)
+
+The 318 samples of lap 39 (red) lie on the 500-point outline (black) all the way round. The
+inset is the first chicane (Variante del Rettifilo), the slowest corner. The script finds it
+as the closest pair of consecutive samples, because samples are spaced by time.
+
+- **Samples bunch up there, the outline points don't.** That's arc-length resampling: the car
+  is slow, so its samples are close together, while the outline points stay about 11.5 m apart.
+- **At the apex the outline sits just inside the samples.** That's the window-3 smoothing,
+  which shifts points by at most 2.3 m (see [Loop smoothing](#loop-smoothing)).
+
+### Pit lane
+
+![The pit lane beside the main straight, and each sample's distance to the circuit](../figures/track_pit_lane.png)
+
+**Top:** the pit lane runs beside the main straight. At the full map's scale it's almost on top
+of the track, so the inset zooms in where it is farthest from the track. There, the in-lap's
+samples on the straight and the pit lane's samples run in two separate lines.
+
+**Bottom:** the distance from each of the 761 in-lap (15) and out-lap (16) samples to the
+circuit, over 195 s. This is the evidence for `PIT_OFFSET`:
+
+| | Monza 2024, car 16 |
+|---|---|
+| Above 5 m | one run, 85.7 s to 115.7 s: 115 samples, up to 19.4 m |
+| Entry | a jump: one sample interval goes from 0 to 12.7 m |
+| Exit | a taper back under 5 m over about 3 s |
+| Away from the pit lane | at most 2.9 m (the first chicane, on the in-lap and on cold tyres on the out-lap) |
+
+### How the script is built
+
+- **`Figure` objects, not `pyplot`.** No GUI backend and no global state: it runs the same
+  headless (CI) as on a desktop, and never opens a window.
+- **Drawn in the outline's rotated frame, in metres.** It's the view the frontend will show,
+  through the same `rotate` and `rotation`.
+- **Insets go in empty space added under the map** (`room_below`), so they never hide track.
+- **Zoom targets come from the data:** the closest pair of samples and the farthest pit sample.
+  No coordinates are hard-coded, so the script still works for another car or circuit.
+- **Reproducible.** The same input gives byte-identical PNGs. The `Software` tag is stripped,
+  so a matplotlib upgrade only changes the files if the rendering itself changes, and a PNG
+  diff in git means the outline changed.
+- **Type-checked, not unit-tested.** It's glue over the tested library code (`scripts` is in
+  mypy's `files`). It's checked by looking at its output, like the notebook.
 
 ## Decisions
 

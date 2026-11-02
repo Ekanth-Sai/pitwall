@@ -1,4 +1,4 @@
-.PHONY: fmt lint typecheck test check audit
+.PHONY: fmt lint typecheck test check audit figures
 
 fmt:
 	uv run ruff format .
@@ -19,3 +19,6 @@ check: lint typecheck test
 audit:
 	uv export --format requirements-txt --all-groups --no-emit-project -q -o .audit-requirements.txt
 	uv run pip-audit --strict --disable-pip -r .audit-requirements.txt
+
+figures:
+	uv run python scripts/figures/track.py

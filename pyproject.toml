@@ -54,7 +54,7 @@ unfixable = ["F401"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests", "notebooks"]
+files = ["src", "tests", "notebooks", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

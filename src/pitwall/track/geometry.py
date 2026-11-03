@@ -3,7 +3,8 @@
 import bisect
 import itertools
 import math
-from collections.abc import Iterable, Sequence
+from collections import defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Self
 
@@ -69,6 +70,71 @@ def nearest_on_loop(p: Point, loop: Sequence[Point]) -> Point:
         raise ValueError("loop is empty")
     segments = zip(loop, [*loop[1:], loop[0]], strict=True)
     return min((_nearest_on_segment(p, a, b) for a, b in segments), key=lambda q: math.dist(p, q))
+
+
+class LoopIndex:
+    """nearest_on_loop for many points against one loop, without scanning every segment.
+
+    A grid of square cells, each listing the segments whose bounding box overlaps it. A query
+    scans rings of cells outwards from the point's cell. Anything outside ring r is at least
+    r cells away, so it stops once the best distance found is no more than that.
+    """
+
+    def __init__(self, loop: Sequence[Point]) -> None:
+        if not loop:
+            raise ValueError("loop is empty")
+        self._segments = list(zip(loop, [*loop[1:], loop[0]], strict=True))
+        self._first = loop[0]
+        bounds = Bounds.of(loop)
+        self._origin = (bounds.min_x, bounds.min_y)
+        # about one segment per cell; a loop of identical points still needs a cell size
+        self._size = path_length([*loop, loop[0]]) / len(loop) or 1.0
+        self._far = self._cell((bounds.max_x, bounds.max_y))  # the grid is (0, 0) to here
+        self._cells: defaultdict[tuple[int, int], list[int]] = defaultdict(list)
+        for i, (a, b) in enumerate(self._segments):
+            x0, y0 = self._cell((min(a[0], b[0]), min(a[1], b[1])))
+            x1, y1 = self._cell((max(a[0], b[0]), max(a[1], b[1])))
+            for cell in itertools.product(range(x0, x1 + 1), range(y0, y1 + 1)):
+                self._cells[cell].append(i)
+
+    def nearest(self, p: Point) -> Point:
+        """The point nearest_on_loop finds (or one as close, on a tie)."""
+        cx, cy = self._cell(p)
+        fx, fy = self._far
+        # rings closer than `first` miss the grid (p is outside it); by `last` all of it is seen
+        first = max(0, -cx, cx - fx, -cy, cy - fy)
+        last = max(abs(cx), abs(cy), abs(fx - cx), abs(fy - cy))
+        best, best_d = self._first, math.dist(p, self._first)
+        seen: set[int] = set()
+        for r in range(first, last + 1):
+            for cell in _ring(cx, cy, r, self._far):
+                for i in self._cells.get(cell, ()):
+                    if i not in seen:
+                        seen.add(i)
+                        q = _nearest_on_segment(p, *self._segments[i])
+                        if (d := math.dist(p, q)) < best_d:
+                            best, best_d = q, d
+            if best_d <= r * self._size:
+                break
+        return best
+
+    def _cell(self, p: Point) -> tuple[int, int]:
+        return (
+            math.floor((p[0] - self._origin[0]) / self._size),
+            math.floor((p[1] - self._origin[1]) / self._size),
+        )
+
+
+def _ring(cx: int, cy: int, r: int, far: tuple[int, int]) -> Iterator[tuple[int, int]]:
+    """The grid cells, from (0, 0) to far, exactly r steps (Chebyshev) from (cx, cy)."""
+    fx, fy = far
+    xs = range(max(cx - r, 0), min(cx + r, fx) + 1)
+    for y in (cy - r, cy + r) if r else (cy,):
+        if 0 <= y <= fy:
+            yield from ((x, y) for x in xs)
+    for x in (cx - r, cx + r) if r else ():
+        if 0 <= x <= fx:
+            yield from ((x, y) for y in range(max(cy - r + 1, 0), min(cy + r - 1, fy) + 1))
 
 
 def _nearest_on_segment(p: Point, a: Point, b: Point) -> Point:

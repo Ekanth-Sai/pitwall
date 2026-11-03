@@ -202,11 +202,22 @@ around, which would pull the entry towards the exit. The box stop's repeated sam
 zero-length segments, which resampling already skips.
 
 **`nearest_on_loop`** projects the point onto every segment of the loop (clamped to the
-segment's ends) and keeps the closest one. It's O(n) per point. For the 761 in-lap and out-lap
-samples against 500 circuit points, that's 0.52 s. The whole `TrackOutline.build` takes 0.43 s
-(Monza), 0.48 s (Singapore) and 0.53 s (Las Vegas). This runs once per track and not at replay
-time, so it waits for the phase perf review. A spatial grid would make it about O(1) per point
-if it's ever needed.
+segment's ends) and keeps the closest one. It's O(n) per point: for the 761 in-lap and out-lap
+samples against 500 circuit points, that was 98% of `TrackOutline.build`.
+
+**`LoopIndex`** (the P0 perf review, [phase0.md](../phases/phase0.md#perf-review)) answers the
+same question from a grid. Each square cell, about one segment long, lists the segments whose
+bounding box overlaps it. A query scans rings of cells outwards from the point's cell and stops
+once the best distance so far is no more than the ring's distance, since anything unscanned is
+at least that far away. Rings that can't reach the grid are skipped and the others are clipped
+to it, so a point far outside the track costs as little as one near it. `pit_lane` builds one
+index per circuit; `nearest_on_loop` stays as the reference the index is tested against.
+
+| `TrackOutline.build` | Before (scan every segment) | After (`LoopIndex`) | JSON |
+|---|---|---|---|
+| Monza 2024, car 16 | 498 ms | 30 ms | identical |
+| Singapore 2024, car 16 | 572 ms | 42 ms | identical |
+| Las Vegas 2023, car 1 | 565 ms | 37 ms | identical |
 
 ## TrackOutline (P0.7e)
 
@@ -402,3 +413,5 @@ circuit, over 195 s. This is the evidence for `PIT_OFFSET`:
 7. **Invariants in `__post_init__`.** A `TrackOutline` with a 2-point circuit can't be built
    by any path: not `build`, not `from_json`, not a direct constructor call.
 8. **Versioned JSON.** `format` lets P1+ change the layout without old files being misread.
+9. **`LoopIndex` is a class**, the one exception to decision 1: it holds a grid built once
+   per circuit and queried hundreds of times, which is state, not maths over a point list.

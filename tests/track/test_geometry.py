@@ -6,6 +6,7 @@ from hypothesis import strategies as st
 
 from pitwall.track.geometry import (
     Bounds,
+    LoopIndex,
     Point,
     nearest_on_loop,
     path_length,
@@ -19,6 +20,8 @@ from pitwall.track.geometry import (
 coord = st.integers(-20_000, 20_000).map(float)
 point = st.tuples(coord, coord)
 paths = st.lists(point, min_size=3, max_size=40, unique=True)
+# query points, some far outside any loop's grid
+anywhere = st.tuples(st.integers(-200_000, 200_000).map(float), coord)
 SQUARE: list[Point] = [(0, 0), (10, 0), (10, 10), (0, 10)]
 
 
@@ -128,6 +131,16 @@ def test_nearest_on_empty_loop_rejected() -> None:
         nearest_on_loop((0, 0), [])
 
 
+def test_loop_index_of_empty_loop_rejected() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        LoopIndex([])
+
+
+def test_loop_index_of_one_point() -> None:
+    # zero length: the cell size can't come from the segments
+    assert LoopIndex([(5, 5)]).nearest((0, 0)) == (5, 5)
+
+
 def test_bounds_of_nothing_rejected() -> None:
     with pytest.raises(ValueError, match="no points"):
         Bounds.of([])
@@ -191,3 +204,10 @@ def test_nearest_beats_every_vertex_and_midpoint(loop: list[Point], p: Point) ->
     ]
     q = nearest_on_loop(p, loop)
     assert math.dist(p, q) <= min(math.dist(p, v) for v in [*loop, *midpoints]) + 1e-6
+
+
+@given(paths, st.one_of(point, anywhere))
+def test_loop_index_matches_nearest_on_loop(loop: list[Point], p: Point) -> None:
+    # same distance; the point itself may differ only on an exact tie
+    expected = math.dist(p, nearest_on_loop(p, loop))
+    assert math.dist(p, LoopIndex(loop).nearest(p)) == pytest.approx(expected, abs=1e-6)

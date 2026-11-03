@@ -9,7 +9,7 @@ get there, and what was learned about the data on the way.
 
 ![Monza 2024 race at 13:40:00 UTC: 20 team-coloured, numbered dots on the circuit outline](../figures/phase0_field.png)
 
-Two pairs of cars nearly cover each other (77 over 20, 43 over 22). Those are real positions
+Each number is black or white, whichever has more contrast on its team colour by the WCAG formula. Two pairs of cars nearly cover each other (77 over 20, 43 over 22). Those are real positions
 a second apart on the straight, and the frontend must handle that: label collisions are P5.7.
 
 ## What was built
@@ -92,7 +92,7 @@ The gap plot is the first view of race state, and it already shows what P3 has t
 | Pit lane | 100 points over 707 m |
 | `TrackOutline` JSON | 10,094 bytes |
 | Location samples for the outline | 18,119 (car 16, whole race) |
-| `TrackOutline.build` | 30 ms (Monza), 42 ms (Singapore), 37 ms (Las Vegas) |
+| `TrackOutline.build` | 12 ms (Monza), 15 ms (Singapore), 13 ms (Las Vegas), about 16× faster than before |
 | OpenF1 free tier | 3 requests/s; HTTP 429 on the 5th request in 1.3 s, `Retry-After: 1` |
 | Update rates (median) | `location`, `car_data` 0.24 s · `intervals` 3.96 s · `weather` 60 s · `race_control` 58 s |
 
@@ -101,27 +101,35 @@ The gap plot is the first view of race state, and it already shows what P3 has t
 Phase 0 has no runtime budget yet: nothing runs at replay time. The rule is still to measure,
 fix the top bottleneck and record before and after.
 
-**Measured:** `TrackOutline.build` took about 0.5 s per track, and cProfile put **98%** of it
+**Measured:** `TrackOutline.build` took 0.2–0.5 s per track, and cProfile put **98%** of it
 in `nearest_on_loop`. `pit_lane` calls it for each of about 760 in-lap and out-lap samples, and
 each call scans all 500 circuit segments: 380,000 point-to-segment projections.
 
 **Fixed:** `LoopIndex` puts the segments in a grid of cells about one segment wide, and a
 query only looks at the cells near the point ([track.md](../design/track.md) has the details).
+Two guards keep odd input from costing more than the brute force: long segments register only
+the cells they pass through, and a query that meets mostly empty cells (an infield point)
+projects the remaining segments directly.
 
 | `TrackOutline.build`, best of 5 | Before | After | Speed-up | Output |
 |---|---|---|---|---|
-| Monza 2024, car 16 | 498 ms | 30 ms | 17× | identical JSON |
-| Singapore 2024, car 16 | 572 ms | 42 ms | 14× | identical JSON |
-| Las Vegas 2023, car 1 | 565 ms | 37 ms | 15× | identical JSON |
+| Monza 2024, car 16 | 195 ms | 12 ms | 16× | identical JSON |
+| Singapore 2024, car 16 | 224 ms | 15 ms | 15× | identical JSON |
+| Las Vegas 2023, car 1 | 224 ms | 13 ms | 17× | identical JSON |
+
+Best of 5, both versions run back to back in one session (the brute force by swapping it back in). Absolute times drift between sessions on this laptop (an earlier run timed the brute force at 498–572 ms), so only same-session pairs are compared; the ratio holds at about 16×.
 
 **How it's known to be right:**
 
 - A hypothesis property test checks that `LoopIndex` finds the same distance as the brute-force
-  `nearest_on_loop` for random loops and points, including points far outside the loop.
+  `nearest_on_loop` for random loops (repeated points and zero-length segments included) and
+  random points, including points far outside the loop in any direction. Two example tests pin
+  the guards: a long diagonal among 2,000 repeated points, and the centre of a circle.
 - A one-off run of 20,000 examples, with duplicate points and up to 60 segments, also passed.
   That run found a real problem on the way: a point far outside the grid walked through
   hundreds of thousands of empty rings. Rings now start where the grid begins and are clipped
-  to it.
+  to it. The code review then found the two remaining slow cases (long segments, infield
+  points), both fixed with the guards above.
 - The three real outlines are byte-identical before and after.
 
 **Not done, on purpose:** `EndpointProfile` makes one pass per field (99 ms for 20,444 rows).
@@ -157,7 +165,7 @@ The threat model starts in P4.7, when the API adds an inbound surface.
    recorded what those models must handle.
 5. **No rate limiter yet.** The figure scripts pace themselves; the real limiter, with a token
    bucket and `Retry-After`, is P2.8, so the library gets one, not two.
-6. **Fix the bottleneck even without a budget.** A 15× faster build keeps tests and figure runs
+6. **Fix the bottleneck even without a budget.** A 16× faster build keeps tests and figure runs
    quick, and the brute-force version stays as the test oracle.
 
 ## Open questions

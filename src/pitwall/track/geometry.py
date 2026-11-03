@@ -75,9 +75,11 @@ def nearest_on_loop(p: Point, loop: Sequence[Point]) -> Point:
 class LoopIndex:
     """nearest_on_loop for many points against one loop, without scanning every segment.
 
-    A grid of square cells, each listing the segments whose bounding box overlaps it. A query
-    scans rings of cells outwards from the point's cell. Anything outside ring r is at least
-    r cells away, so it stops once the best distance found is no more than that.
+    A grid of square cells, each listing the segments that pass through it. A query scans
+    rings of cells outwards from the point's cell. Anything outside ring r is at least r cells
+    away, so it stops once the best distance found is no more than that. A query that meets
+    more cells than there are segments (a point in a big empty area, such as the infield)
+    projects the rest directly, so it never costs much more than nearest_on_loop.
     """
 
     def __init__(self, loop: Sequence[Point]) -> None:
@@ -92,9 +94,7 @@ class LoopIndex:
         self._far = self._cell((bounds.max_x, bounds.max_y))  # the grid is (0, 0) to here
         self._cells: defaultdict[tuple[int, int], list[int]] = defaultdict(list)
         for i, (a, b) in enumerate(self._segments):
-            x0, y0 = self._cell((min(a[0], b[0]), min(a[1], b[1])))
-            x1, y1 = self._cell((max(a[0], b[0]), max(a[1], b[1])))
-            for cell in itertools.product(range(x0, x1 + 1), range(y0, y1 + 1)):
+            for cell in self._cells_under(a, b):
                 self._cells[cell].append(i)
 
     def nearest(self, p: Point) -> Point:
@@ -106,17 +106,46 @@ class LoopIndex:
         last = max(abs(cx), abs(cy), abs(fx - cx), abs(fy - cy))
         best, best_d = self._first, math.dist(p, self._first)
         seen: set[int] = set()
+        scanned = 0
         for r in range(first, last + 1):
-            for cell in _ring(cx, cy, r, self._far):
-                for i in self._cells.get(cell, ()):
-                    if i not in seen:
-                        seen.add(i)
-                        q = _nearest_on_segment(p, *self._segments[i])
-                        if (d := math.dist(p, q)) < best_d:
-                            best, best_d = q, d
+            ring = list(_ring(cx, cy, r, self._far))
+            fresh = {i for cell in ring for i in self._cells.get(cell, ())} - seen
+            best, best_d = self._closest(p, fresh, best, best_d)
+            seen |= fresh
             if best_d <= r * self._size:
-                break
-        return best
+                return best
+            scanned += len(ring)
+            if scanned > len(self._segments):
+                break  # mostly empty cells so far: projecting what's left is cheaper
+        rest = set(range(len(self._segments))) - seen
+        return self._closest(p, rest, best, best_d)[0]
+
+    def _closest(
+        self, p: Point, indices: Iterable[int], best: Point, best_d: float
+    ) -> tuple[Point, float]:
+        for i in indices:
+            q = _nearest_on_segment(p, *self._segments[i])
+            if (d := math.dist(p, q)) < best_d:
+                best, best_d = q, d
+        return best, best_d
+
+    def _cells_under(self, a: Point, b: Point) -> set[tuple[int, int]]:
+        """Cells that cover the segment from a to b.
+
+        Cut into pieces no longer than a cell, each piece's bounding box spans at most 2 x 2
+        cells. A long diagonal then costs about its length in cells, not its whole bounding box.
+        """
+        pieces = max(1, math.ceil(math.dist(a, b) / self._size))
+        ends = [
+            (a[0] + (b[0] - a[0]) * k / pieces, a[1] + (b[1] - a[1]) * k / pieces)
+            for k in range(pieces + 1)
+        ]
+        cells: set[tuple[int, int]] = set()
+        for p, q in itertools.pairwise(ends):
+            x0, y0 = self._cell((min(p[0], q[0]), min(p[1], q[1])))
+            x1, y1 = self._cell((max(p[0], q[0]), max(p[1], q[1])))
+            cells.update(itertools.product(range(x0, x1 + 1), range(y0, y1 + 1)))
+        return cells
 
     def _cell(self, p: Point) -> tuple[int, int]:
         return (

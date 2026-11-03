@@ -206,18 +206,33 @@ segment's ends) and keeps the closest one. It's O(n) per point: for the 761 in-l
 samples against 500 circuit points, that was 98% of `TrackOutline.build`.
 
 **`LoopIndex`** (the P0 perf review, [phase0.md](../phases/phase0.md#perf-review)) answers the
-same question from a grid. Each square cell, about one segment long, lists the segments whose
-bounding box overlaps it. A query scans rings of cells outwards from the point's cell and stops
-once the best distance so far is no more than the ring's distance, since anything unscanned is
-at least that far away. Rings that can't reach the grid are skipped and the others are clipped
-to it, so a point far outside the track costs as little as one near it. `pit_lane` builds one
-index per circuit; `nearest_on_loop` stays as the reference the index is tested against.
+same question from a grid. Each square cell, about one segment long, lists the segments that
+pass through it. A query scans rings of cells outwards from the point's cell and stops once the
+best distance so far is no more than the ring's distance, since anything unscanned is at least
+that far away. Rings that can't reach the grid are skipped and the others are clipped to it, so
+a point far outside the track costs as little as one near it. `nearest_on_loop` stays as the
+reference the index is tested against.
 
-| `TrackOutline.build` | Before (scan every segment) | After (`LoopIndex`) | JSON |
-|---|---|---|---|
-| Monza 2024, car 16 | 498 ms | 30 ms | identical |
-| Singapore 2024, car 16 | 572 ms | 42 ms | identical |
-| Las Vegas 2023, car 1 | 565 ms | 37 ms | identical |
+Two guards, both from the code review, keep unusual input from costing more than brute force:
+
+- **Cells along the segment, not its box.** A segment is cut into pieces no longer than a cell
+  and each piece registers its own bounding box (at most 2 × 2 cells). A long diagonal among
+  short segments used to fill its whole bounding box: 6.3 million cell entries and 2.8 s to
+  build for 5,000 repeated points plus one long segment. Now it's 15,600 entries and 20 ms.
+- **Give up on empty space.** Once a query has scanned more cells than the loop has segments,
+  it projects the remaining segments directly. A point in the middle of a circular loop (an
+  infield) took 3.1 ms against 0.26 ms for brute force; it now takes 0.33 ms.
+
+`pit_lane` builds a fresh index per call. That costs about 1–2 ms for 500 points, so
+`pit_stop` trying a second stop doesn't need to share one.
+
+| `TrackOutline.build` | Before (scan every segment) | After (`LoopIndex`) | Speed-up | JSON |
+|---|---|---|---|---|
+| Monza 2024, car 16 | 195 ms | 12 ms | 16× | identical |
+| Singapore 2024, car 16 | 224 ms | 15 ms | 15× | identical |
+| Las Vegas 2023, car 1 | 224 ms | 13 ms | 17× | identical |
+
+Best of 5, both versions run back to back in one session (the brute force by swapping it back in). Absolute times drift between sessions on this laptop (an earlier run timed the brute force at 498–572 ms), so only same-session pairs are compared; the ratio holds at about 16×.
 
 ## TrackOutline (P0.7e)
 

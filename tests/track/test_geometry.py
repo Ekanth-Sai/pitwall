@@ -20,8 +20,10 @@ from pitwall.track.geometry import (
 coord = st.integers(-20_000, 20_000).map(float)
 point = st.tuples(coord, coord)
 paths = st.lists(point, min_size=3, max_size=40, unique=True)
-# query points, some far outside any loop's grid
-anywhere = st.tuples(st.integers(-200_000, 200_000).map(float), coord)
+any_loops = st.lists(point, min_size=1, max_size=10)
+# query points, some far outside any loop's grid, in either direction
+far = st.integers(-200_000, 200_000).map(float)
+anywhere = st.tuples(far, far)
 SQUARE: list[Point] = [(0, 0), (10, 0), (10, 10), (0, 10)]
 
 
@@ -139,6 +141,27 @@ def test_loop_index_of_empty_loop_rejected() -> None:
 def test_loop_index_of_one_point() -> None:
     # zero length: the cell size can't come from the segments
     assert LoopIndex([(5, 5)]).nearest((0, 0)) == (5, 5)
+
+
+def test_loop_index_long_segment_among_short_ones() -> None:
+    # one long diagonal among thousands of zero-length segments: cells follow the diagonal
+    # instead of filling its bounding box, and queries still agree with the brute force
+    loop: list[Point] = [(0, 0)] * 2000 + [(1e6, 1e6)]
+    index = LoopIndex(loop)
+    for p in [(5e5, 5e5 + 10), (2e5, 9e5), (1e6, 0), (-50, -50)]:
+        assert math.dist(p, index.nearest(p)) == pytest.approx(
+            math.dist(p, nearest_on_loop(p, loop))
+        )
+
+
+def test_loop_index_infield_points() -> None:
+    # the centre of a circle is far from every segment: the query falls back to projecting them all
+    circle = [
+        (1000 * math.cos(2 * math.pi * k / 200), 1000 * math.sin(2 * math.pi * k / 200))
+        for k in range(200)
+    ]
+    expected = math.dist((0, 0), nearest_on_loop((0, 0), circle))
+    assert math.dist((0, 0), LoopIndex(circle).nearest((0, 0))) == pytest.approx(expected)
 
 
 def test_bounds_of_nothing_rejected() -> None:

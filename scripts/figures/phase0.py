@@ -3,6 +3,7 @@
 Run from the repo root: uv run python scripts/figures/phase0.py
 """
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -45,10 +46,12 @@ def fetch(client: OpenF1Client) -> Race:
     session = sessions[0]
     laps = client.laps(session.key, driver=CAR)
     end = last_lap_end(laps)
-    # lap 1 starts at the race start (race control: SESSION STARTED)
-    start = laps[0].start if laps else None
-    if start is None or end is None:
+    if not laps or end is None:
         raise SystemExit(f"No timed laps for car {CAR}")
+    # lap 1 starts at the race start (race control: SESSION STARTED)
+    start = min(laps, key=lambda lap: lap.number).start
+    if start is None:
+        raise SystemExit(f"Lap 1 of car {CAR} has no start time, so the race start is unknown")
     snap = session.start + SNAPSHOT
     return Race(
         track=TrackOutline.build(laps, client.locations(session.key, session.start, end, CAR)),
@@ -62,9 +65,17 @@ def fetch(client: OpenF1Client) -> Race:
 
 
 def ink_on(colour: str) -> str:
-    """Black or white, whichever reads better on a team colour (hex without '#')."""
-    r, g, b = (int(colour[i : i + 2], 16) for i in (0, 2, 4))
-    return "black" if 0.299 * r + 0.587 * g + 0.114 * b > 150 else "white"
+    """Black or white, whichever has more WCAG contrast on a team colour (hex without '#')."""
+    r, g, b = (_linear(int(colour[i : i + 2], 16)) for i in (0, 2, 4))
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    # black wins when (L + 0.05) / 0.05 > 1.05 / (L + 0.05), i.e. L > sqrt(0.0525) - 0.05
+    return "black" if luminance > math.sqrt(0.0525) - 0.05 else "white"
+
+
+def _linear(channel: int) -> float:
+    """An sRGB channel (0-255) as linear light (0-1): screens store it gamma-encoded."""
+    c = channel / 255
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
 def field_figure(
@@ -107,11 +118,16 @@ def field_figure(
     return fig
 
 
-def finishing_order(positions: list[Row]) -> list[int]:
-    last: dict[int, int] = {}
-    for row in positions:  # time order: the last row per car is where it finished
-        last[row["driver_number"]] = row["position"]
-    return sorted(last, key=last.__getitem__)
+def winner(positions: list[Row]) -> int:
+    """The car in P1 at the end: the latest P1 row (a car that retired in P1 loses it later)."""
+    leaders: list[tuple[datetime, int]] = [
+        (datetime.fromisoformat(row["date"]), row["driver_number"])
+        for row in positions
+        if row["position"] == 1
+    ]
+    if not leaders:
+        raise SystemExit("No car ever held P1 in the position feed")
+    return max(leaders)[1]
 
 
 def gaps_figure(
@@ -120,8 +136,9 @@ def gaps_figure(
     """Gap to the leader over the race; also returns how many rows weren't a number of seconds."""
     lines: defaultdict[int, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
     skipped = 0
-    for row in intervals:
-        at = datetime.fromisoformat(row["date"])
+    # lines are drawn in row order, so sort by time rather than trust the feed's order
+    timed = sorted(((datetime.fromisoformat(row["date"]), row) for row in intervals), key=_first)
+    for at, row in timed:
         gap = row["gap_to_leader"]
         if at < start:
             continue  # formation and grid: an hour of rows before the race (openf1-data.md)
@@ -131,6 +148,9 @@ def gaps_figure(
         minutes, seconds = lines[row["driver_number"]]
         minutes.append((at - start).total_seconds() / 60)
         seconds.append(gap)
+
+    if winner not in lines:
+        raise SystemExit(f"No gap to the leader in seconds for the winner, car {winner}")
 
     fig = Figure(figsize=(10, 5), layout="constrained")
     ax = fig.subplots()
@@ -158,12 +178,16 @@ def gaps_figure(
     return fig, skipped
 
 
+def _first(pair: tuple[datetime, Row]) -> datetime:
+    return pair[0]
+
+
 def main() -> None:
     with HttpTransport.create(BASE_URL) as http:
         race = fetch(OpenF1Client(CachedTransport(Paced(http), CACHE)))
-    order = finishing_order(race.positions)
-    gaps, skipped = gaps_figure(race.intervals, race.start, order[0], race.drivers)
-    print(f"finishing order: {order[:3]}; gap rows that aren't seconds: {skipped}")
+    lead = winner(race.positions)
+    gaps, skipped = gaps_figure(race.intervals, race.start, lead, race.drivers)
+    print(f"winner: car {lead}; gap rows that aren't seconds: {skipped}")
     figures = {
         "phase0_field.png": field_figure(race.track, race.field, race.drivers, race.snap),
         "phase0_gaps.png": gaps,

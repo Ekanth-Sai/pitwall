@@ -51,6 +51,8 @@ def pit_lane(
         raise ValueError(f"offset must be positive, got {offset}")
     if min_run < 1:
         raise ValueError(f"min_run must be at least 1, got {min_run}")
+    if not points:
+        return None  # nothing left the circuit; no need to index it
     index = LoopIndex(circuit)
     far = [math.dist(p, index.nearest(p)) > offset for p in points]
     run = _longest_run(far)

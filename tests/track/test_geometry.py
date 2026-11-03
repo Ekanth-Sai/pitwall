@@ -20,7 +20,8 @@ from pitwall.track.geometry import (
 coord = st.integers(-20_000, 20_000).map(float)
 point = st.tuples(coord, coord)
 paths = st.lists(point, min_size=3, max_size=40, unique=True)
-any_loops = st.lists(point, min_size=1, max_size=10)
+# loops as samples arrive: repeated points (zero-length segments) allowed
+any_loops = st.lists(point, min_size=1, max_size=40)
 # query points, some far outside any loop's grid, in either direction
 far = st.integers(-200_000, 200_000).map(float)
 anywhere = st.tuples(far, far)
@@ -154,7 +155,7 @@ def test_loop_index_long_segment_among_short_ones() -> None:
         )
 
 
-def test_loop_index_infield_points() -> None:
+def test_loop_index_infield_point() -> None:
     # the centre of a circle is far from every segment: the query falls back to projecting them all
     circle = [
         (1000 * math.cos(2 * math.pi * k / 200), 1000 * math.sin(2 * math.pi * k / 200))
@@ -229,7 +230,7 @@ def test_nearest_beats_every_vertex_and_midpoint(loop: list[Point], p: Point) ->
     assert math.dist(p, q) <= min(math.dist(p, v) for v in [*loop, *midpoints]) + 1e-6
 
 
-@given(paths, st.one_of(point, anywhere))
+@given(any_loops, st.one_of(point, anywhere))
 def test_loop_index_matches_nearest_on_loop(loop: list[Point], p: Point) -> None:
     # same distance; the point itself may differ only on an exact tie
     expected = math.dist(p, nearest_on_loop(p, loop))

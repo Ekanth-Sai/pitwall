@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pitwall.ingest.openf1 import Lap, LocationSample
-from pitwall.track.geometry import Point, nearest_on_loop
+from pitwall.track.geometry import LoopIndex, Point
 from pitwall.track.laps import pit_stops, span_samples
 
 # Decimetres. Racing laps stay within 3m of the outline; Monza's pit lane runs 13-19m from it
@@ -51,7 +51,10 @@ def pit_lane(
         raise ValueError(f"offset must be positive, got {offset}")
     if min_run < 1:
         raise ValueError(f"min_run must be at least 1, got {min_run}")
-    far = [math.dist(p, nearest_on_loop(p, circuit)) > offset for p in points]
+    if not points:
+        return None  # nothing left the circuit; no need to index it
+    index = LoopIndex(circuit)
+    far = [math.dist(p, index.nearest(p)) > offset for p in points]
     run = _longest_run(far)
     if run is None or run[1] - run[0] < min_run:
         return None
@@ -59,7 +62,7 @@ def pit_lane(
     # the samples either side of the run are where the car left and rejoined the circuit
     entry = points[start - 1] if start > 0 else points[start]
     exit_ = points[stop] if stop < len(points) else points[stop - 1]
-    return [nearest_on_loop(entry, circuit), *points[start:stop], nearest_on_loop(exit_, circuit)]
+    return [index.nearest(entry), *points[start:stop], index.nearest(exit_)]
 
 
 def _longest_run(flags: Sequence[bool]) -> tuple[int, int] | None:

@@ -38,6 +38,11 @@ def test_run_at_either_end(points: list[Point], expected: list[Point]) -> None:
     assert pit_lane(points, CIRCUIT, min_run=1) == expected
 
 
+def test_no_points_no_pit_lane() -> None:
+    # returns before indexing the circuit, so even an empty circuit is fine
+    assert pit_lane([], []) is None
+
+
 def test_never_left_the_circuit() -> None:
     assert pit_lane([(100, 0), (200, 20), (300, 0)], CIRCUIT, min_run=1) is None
 

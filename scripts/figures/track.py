@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 
 from pitwall.ingest.openf1 import BASE_URL, Lap, LocationSample, OpenF1Client
 from pitwall.ingest.transport import CachedTransport, HttpTransport
-from pitwall.track.geometry import Bounds, Point, nearest_on_loop, rotate
+from pitwall.track.geometry import Bounds, LoopIndex, Point, rotate
 from pitwall.track.laps import lap_samples, last_lap_end, representative_lap
 from pitwall.track.outline import TrackOutline
 from pitwall.track.pitlane import PIT_OFFSET, pit_stop
@@ -120,7 +120,8 @@ def pit_figure(plot: Plotter, stop: Sequence[LocationSample]) -> Figure:
     if lane is None:
         raise SystemExit("the outline has no pit lane to draw")
     points = xy(stop)
-    metres = [math.dist(p, nearest_on_loop(p, plot.track.circuit)) / 10 for p in points]
+    circuit = LoopIndex(plot.track.circuit)
+    metres = [math.dist(p, circuit.nearest(p)) / 10 for p in points]
     seconds = [(s.time - stop[0].time).total_seconds() for s in stop]
     threshold = PIT_OFFSET / 10
 

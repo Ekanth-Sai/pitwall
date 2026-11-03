@@ -41,7 +41,8 @@ flowchart LR
 
 ![Seconds between consecutive rows for each endpoint, on a log scale](../figures/openf1_rates.png)
 
-The gaps are measured per car, wherever rows carry a `driver_number`.
+The gaps are measured per car when every row carries a `driver_number`, otherwise across the
+whole feed (`weather`, and `race_control`, which mixes car messages with track-wide ones).
 
 | Endpoint | Rows (race) | Median gap | Kind | Notes |
 |---|---|---|---|---|
@@ -50,7 +51,7 @@ The gaps are measured per car, wherever rows carry a `driver_number`.
 | `intervals` | 20,444 | 3.96 s | clock | "every 4 seconds"; races only |
 | `weather` | 133 | 60 s | clock | one feed for the session, no `driver_number` |
 | `position` | 482 | 85 s | event | 20 rows at 12:07:46 (the grid), then a row per change |
-| `race_control` | 61 | 2.6 min | event | messages, flags, DRS on/off |
+| `race_control` | 61 | 58 s | event | whole feed; messages, flags, DRS on/off; two messages share one instant |
 | `pit` | 30 | 29 min | event | one row per stop; the gap is between two stops of one car |
 | `stints` | 50 | – | event | no `date`: stints are keyed by lap numbers |
 
@@ -156,9 +157,15 @@ flowchart LR
 - **`EndpointProfile` works on raw rows**, before any typed model, because its job is to find
   out what the rows look like. It counts each field's JSON types (`null` and `absent` are
   different: a key that's missing is not a key that's null).
-- **Gaps are per driver** when rows have a `driver_number`, otherwise across the whole feed.
-  Mixing drivers would make `location` look like 80 Hz.
-- **An unreadable `date` is a `SchemaError`**: it's the world sending bad data, not a caller bug.
+- **Gaps are per driver** when every dated row has a `driver_number`, otherwise across the
+  whole feed. Mixing drivers would make `location` look like 80 Hz; splitting `race_control`
+  by car would measure "messages about one car", not how often the feed updates.
+- **A null `date` is skipped like a missing one.** A `date` that isn't an ISO 8601 string is a
+  `SchemaError`: it's the world sending bad data, not a caller bug.
+- **Zero gaps** (two rows at the same instant) count towards the median but can't be drawn on
+  the log axis, so the figure leaves them out.
+- **Cost:** one pass per field, about 0.1 s for the 20,444 `intervals` rows. Fine for a survey
+  script; a single-pass version waits until something calls it on a hot path.
 - **The script is glue**, type-checked but not unit-tested, like `scripts/figures/track.py`.
   `EndpointProfile` is the part with logic, and it is tested (100%).
 

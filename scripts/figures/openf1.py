@@ -5,7 +5,7 @@ Run from the repo root: uv run python scripts/figures/openf1.py
 
 import time
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 
 from matplotlib.figure import Figure
@@ -28,7 +28,7 @@ EVENT_FEEDS = frozenset({"position", "pit", "race_control"})
 
 
 class Paced:
-    """Waits between requests: OpenF1 answers a 4th request within a second with HTTP 429.
+    """Waits between requests: OpenF1 allows 3 a second, and answered the 5th in 1.3 s with 429.
 
     Sits under the cache, so cached runs don't wait. The real limiter is P2.8.
     """
@@ -51,7 +51,7 @@ def fetch(client: OpenF1Client) -> tuple[Session, dict[str, list[Row]]]:
     session = sessions[0]
     rows = {name: client.query(name, {"session_key": session.key}) for name in SESSION_ENDPOINTS}
     # per-car feeds are big (~4 Hz): one car, a window that starts after the race start
-    start = session.start + timedelta(minutes=30)
+    start = (session.start + timedelta(minutes=30)).astimezone(UTC)
     window: Params = {
         "session_key": session.key,
         "driver_number": CAR,
@@ -71,7 +71,7 @@ def table(profile: EndpointProfile) -> str:
     lines = [head, "", "| Field | Types | Example |", "|---|---|---|"]
     for f in profile.fields:
         types = ", ".join(f"{name} {count}" for name, count in sorted(f.types.items()))
-        lines.append(f"| `{f.name}` | {types} | `{f.example!r}` |"[:200])
+        lines.append(f"| `{f.name}` | {types} | `{repr(f.example)[:60]}` |")
     return "\n".join(lines)
 
 
@@ -88,9 +88,12 @@ def rates_figure(profiles: Sequence[EndpointProfile]) -> Figure:
     fig = Figure(figsize=(9, 0.6 * len(timed) + 1.4), layout="constrained")
     ax = fig.subplots()
     for i, p in enumerate(timed):
-        # every gap as a faint tick, the median as a solid bar
-        ax.scatter(p.gaps, [i] * len(p.gaps), marker="|", s=60, color=INK, alpha=0.15, lw=1)
+        # every gap as a faint tick, the median as a solid bar; a log axis can't show 0
+        shown = [gap for gap in p.gaps if gap > 0]
+        ax.scatter(shown, [i] * len(shown), marker="|", s=60, color=INK, alpha=0.15, lw=1)
         median = p.median_gap or 0
+        if median <= 0:
+            continue
         ax.plot([median, median], [i - 0.3, i + 0.3], color=INK, lw=2.5)
         ax.annotate(
             duration(median),
@@ -110,18 +113,19 @@ def rates_figure(profiles: Sequence[EndpointProfile]) -> Figure:
     ):
         va = "top" if y < split else "bottom"
         ax.text(
-            0.995,
+            0.005,
             y,
             text,
             transform=ax.get_yaxis_transform(),
-            ha="right",
+            ha="left",
             va=va,
             fontsize=8,
             color="#666666",
         )
     ax.set_xscale("log")
-    ax.set_xlabel("seconds between consecutive rows (per car where rows have one; log scale)")
-    ax.set_title(f"OpenF1 update intervals, Monza 2024 race (per-car feeds: car {CAR}, 10 min)")
+    ax.set_xlabel("seconds between consecutive rows (per car if every row has one; log scale)")
+    window = duration(WINDOW.total_seconds())
+    ax.set_title(f"OpenF1 update intervals, Monza 2024 race (per-car feeds: car {CAR}, {window})")
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="x", which="major", color="#e5e5e5", lw=0.8)
     ax.set_axisbelow(True)

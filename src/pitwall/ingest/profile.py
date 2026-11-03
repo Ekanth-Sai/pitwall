@@ -1,11 +1,11 @@
 """Profile raw OpenF1 rows: which fields an endpoint sends, how complete they are, how often."""
 
 import statistics
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from itertools import groupby, pairwise
+from itertools import pairwise
 from typing import Self
 
 from pitwall.errors import SchemaError
@@ -29,10 +29,6 @@ class FieldProfile:
     types: Mapping[str, int]  # JSON type -> number of rows; a missing key counts as "absent"
     example: object  # the first non-null value, None if every row is null or absent
 
-    @property
-    def nulls(self) -> int:
-        return self.types.get("null", 0) + self.types.get("absent", 0)
-
 
 @dataclass(frozen=True)
 class EndpointProfile:
@@ -48,15 +44,11 @@ class EndpointProfile:
     @classmethod
     def of(cls, endpoint: str, rows: Sequence[Row]) -> Self:
         names = sorted({name for row in rows for name in row})
-        try:
-            gaps = tuple(_gaps(rows))
-        except (TypeError, ValueError) as e:
-            raise SchemaError(f"{endpoint}: unreadable date: {e!r}") from e
         return cls(
             endpoint=endpoint,
             rows=len(rows),
             fields=tuple(_field(name, rows) for name in names),
-            gaps=gaps,
+            gaps=tuple(_gaps(endpoint, rows)),
         )
 
 
@@ -73,14 +65,27 @@ def _field(name: str, rows: Sequence[Row]) -> FieldProfile:
     return FieldProfile(name, dict(types), example)
 
 
-def _gaps(rows: Sequence[Row]) -> Iterable[float]:
-    """Per driver when rows carry one, else across the whole feed (weather, race control)."""
-    timed = [
-        (row.get("driver_number"), datetime.fromisoformat(row["date"]))
-        for row in rows
-        if "date" in row
-    ]
-    timed.sort(key=lambda pair: (pair[0] is None, pair[0] or 0, pair[1]))
-    for _, group in groupby(timed, key=lambda pair: pair[0]):
-        times = [t for _, t in group]
+def _gaps(endpoint: str, rows: Sequence[Row]) -> Iterable[float]:
+    """Per driver when every dated row has one, else across the whole feed.
+
+    race_control mixes car messages with track-wide ones: its rate is the feed's, not a car's.
+    """
+    dated = [row for row in rows if row.get("date") is not None]
+    per_driver = all(row.get("driver_number") is not None for row in dated)
+    streams: defaultdict[str, list[datetime]] = defaultdict(list)
+    for row in dated:
+        # repr: any JSON value is a valid key, and 16 and "16" stay apart
+        key = repr(row["driver_number"]) if per_driver else ""
+        streams[key].append(_time(endpoint, row["date"]))
+    for times in streams.values():
+        times.sort()
         yield from ((b - a).total_seconds() for a, b in pairwise(times))
+
+
+def _time(endpoint: str, value: object) -> datetime:
+    if not isinstance(value, str):
+        raise SchemaError(f"{endpoint}: unreadable date: {value!r}")
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as e:
+        raise SchemaError(f"{endpoint}: unreadable date: {value!r}") from e

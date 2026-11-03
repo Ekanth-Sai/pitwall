@@ -80,6 +80,24 @@ def test_operator_suffixes_are_allowed() -> None:
     assert len(fake.calls) == 1
 
 
+@pytest.mark.parametrize(
+    ("endpoint", "params"),
+    [
+        ("intervals", {"session_key": 9590, "interval<": 1}),
+        ("position", {"session_key": 9590, "position": 1}),
+        ("stints", {"session_key": 9590, "compound": "SOFT"}),
+        ("pit", {"session_key": 9590, "lane_duration<": 25}),
+        ("race_control", {"session_key": 9590, "category": "Flag"}),
+        ("weather", {"session_key": 9590, "rainfall": 1}),
+        ("car_data", {"session_key": 9590, "driver_number": 16, "speed>": 300}),
+    ],
+)
+def test_surveyed_endpoints_accept_their_fields(endpoint: str, params: Params) -> None:
+    client, fake = client_returning(ok([]))
+    client.query(endpoint, params)
+    assert fake.calls == [(endpoint, params)]
+
+
 def test_field_names_with_digits_are_allowed() -> None:
     client, fake = client_returning(ok([]))
     client.query("laps", {"duration_sector_1<": 30, "i1_speed>": 300})

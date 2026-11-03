@@ -5,6 +5,7 @@
 | [architecture.md](architecture.md) | Whole system: ingest → log → processing → gateway → UI |
 | [dev-pipeline.md](dev-pipeline.md) | Local hooks, CI, PR flow |
 | [ingest.md](ingest.md) | P0.4 OpenF1 client, transports, error handling |
+| [openf1-data.md](openf1-data.md) | P0.8 endpoint survey: update rates, rate limits, nulls, units, oddities |
 | [track.md](track.md) | P0.7 circuit outline: lap selection, resampling, smoothing, pit lane, `TrackOutline` JSON, figures |
 | [security.md](security.md) | Security baseline (P0.5), threat model (from P4.7) |
 

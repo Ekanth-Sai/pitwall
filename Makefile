@@ -23,3 +23,4 @@ audit:
 figures:
 	uv run python scripts/figures/track.py
 	uv run python scripts/figures/openf1.py
+	uv run python scripts/figures/phase0.py

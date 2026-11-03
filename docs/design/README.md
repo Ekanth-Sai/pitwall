@@ -10,6 +10,7 @@
 | [security.md](security.md) | Security baseline (P0.5), threat model (from P4.7) |
 
 Planned: `event-log.md` (P2.1), `gateway.md` (P4.1).
+Phase write-ups: [phase0.md](../phases/phase0.md).
 Phase write-ups live in `docs/phases/`, generated figures in `docs/figures/`.
 Dates, sprint plan and velocity log: [../schedule.md](../schedule.md).
 

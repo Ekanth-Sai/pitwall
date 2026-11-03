@@ -75,6 +75,78 @@ FIELDS: dict[str, frozenset[str]] = {
             "st_speed",
         }
     ),
+    # surveyed in P0.8 (docs/design/openf1-data.md); typed models come with their consumers
+    "intervals": frozenset(
+        {"session_key", "meeting_key", "driver_number", "date", "gap_to_leader", "interval"}
+    ),
+    "position": frozenset({"session_key", "meeting_key", "driver_number", "date", "position"}),
+    "stints": frozenset(
+        {
+            "session_key",
+            "meeting_key",
+            "driver_number",
+            "stint_number",
+            "lap_start",
+            "lap_end",
+            "compound",
+            "tyre_age_at_start",
+        }
+    ),
+    "pit": frozenset(
+        {
+            "session_key",
+            "meeting_key",
+            "driver_number",
+            "date",
+            "lap_number",
+            "lane_duration",
+            "pit_duration",
+            "stop_duration",
+        }
+    ),
+    "race_control": frozenset(
+        {
+            "session_key",
+            "meeting_key",
+            "driver_number",
+            "date",
+            "lap_number",
+            "category",
+            "flag",
+            "scope",
+            "sector",
+            "message",
+            "qualifying_phase",
+        }
+    ),
+    "weather": frozenset(
+        {
+            "session_key",
+            "meeting_key",
+            "date",
+            "air_temperature",
+            "track_temperature",
+            "humidity",
+            "pressure",
+            "rainfall",
+            "wind_direction",
+            "wind_speed",
+        }
+    ),
+    "car_data": frozenset(
+        {
+            "session_key",
+            "meeting_key",
+            "driver_number",
+            "date",
+            "speed",
+            "rpm",
+            "n_gear",
+            "throttle",
+            "brake",
+            "drs",
+        }
+    ),
 }
 
 

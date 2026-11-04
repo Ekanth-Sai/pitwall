@@ -1,3 +1,6 @@
 """Pitwall: a live F1 race tracker."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+# one source of truth: [project] version in pyproject.toml, read back from the installed metadata
+__version__ = version("pitwall")

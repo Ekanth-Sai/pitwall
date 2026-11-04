@@ -1,7 +1,7 @@
 [project]
 name = "pitwall"
 version = "0.1.0"
-description = "Add your description here"
+description = "A live F1 race tracker: circuit map, timing and replay, built on OpenF1 data"
 readme = "README.md"
 authors = [
     { name = "Ekanth-Sai", email = "ekanthsaiy@gmail.com" }
@@ -55,9 +55,11 @@ unfixable = ["F401"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests", "notebooks", "scripts"]
+mypy_path = "scripts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["scripts"] # tests import scripts/release_notes.py
 addopts = "-ra --strict-markers --cov --cov-report=term-missing"
 
 [tool.coverage.run]

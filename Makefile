@@ -1,4 +1,4 @@
-.PHONY: fmt lint typecheck test check audit figures
+.PHONY: fmt lint typecheck test check audit figures build
 
 fmt:
 	uv run ruff format .
@@ -24,3 +24,7 @@ figures:
 	uv run python scripts/figures/track.py
 	uv run python scripts/figures/openf1.py
 	uv run python scripts/figures/phase0.py
+
+build:
+	rm -rf dist
+	uv build

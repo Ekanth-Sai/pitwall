@@ -27,15 +27,17 @@ flowchart TD
     A["Phase write-up merged"] --> B["Branch: bump the minor version,<br/>date the CHANGELOG section"]
     B --> C["PR, CI green, squash-merge"]
     C --> D["git tag vX.Y.Z on main, push the tag"]
-    D --> E{"release.yml<br/>on the tag"}
-    E -->|"tag not on main"| X["Fail"]
-    E -->|"make check fails"| X
-    E -->|"tag, pyproject.toml and CHANGELOG disagree"| X
+    D --> E{"build job<br/>read-only token"}
+    E -->|"tag, pyproject.toml and CHANGELOG disagree"| X["Fail, nothing published"]
+    E -->|"tag not on main"| X
+    E -->|"make check or make audit fails"| X
     E --> F["uv build: wheel + sdist"]
-    F --> G{"Wheel installs in a clean env<br/>and reports the tag's version?"}
+    F --> G{"Both install in clean envs with locked versions<br/>and report the tag's version?"}
     G -->|"no"| X
-    G -->|"yes"| H["Signed build provenance"]
-    H --> I["GitHub release: notes from CHANGELOG,<br/>wheel + sdist attached"]
+    G -->|"yes"| H["Upload dist and notes"]
+    H --> I["publish job<br/>write token, runs no project code"]
+    I --> J["Signed build provenance"]
+    J --> K["GitHub release: notes from CHANGELOG,<br/>wheel + sdist attached"]
 ```
 
 - **Versions** follow SemVer: one minor version per phase (P0 is v0.1.0, P8 is v1.0.0), patches
@@ -47,12 +49,17 @@ flowchart TD
   `## [Unreleased]`; the release PR renames that to `## [X.Y.Z] - date` and opens a new empty
   `Unreleased`. Links inside a release section are absolute, because the same text becomes the
   GitHub release notes.
-- **The tag is the trigger.** `release.yml` refuses to publish unless the tag is on `main`,
-  `make check` passes, `scripts/release_notes.py` finds the tag's version in both `pyproject.toml`
-  and `CHANGELOG.md`, and the built wheel installs and reports that version. A mistyped tag fails
-  before anything is published.
-- **Permissions:** only the release job can write (`contents: write` to create the release,
-  `id-token` and `attestations` to sign provenance). CI stays read-only.
+- **The tag is the trigger.** The `build` job refuses to go on unless `scripts/release_notes.py`
+  finds the tag's version in both `pyproject.toml` and `CHANGELOG.md` (checked first, with the
+  standard library only, so a mistyped tag fails in seconds), the tag is on `main`, and
+  `make check` and `make audit` pass. It then builds, and installs both the wheel and the sdist in
+  clean environments pinned to the versions in `uv.lock`; each must report the tag's version.
+- **Two jobs, so the token that can write never meets third-party code.** `build` installs
+  dependencies and runs the tests with a read-only token that isn't kept in `.git/config`
+  (`persist-credentials: false`), and with the uv cache off, so nothing restored from another run
+  can end up in a signed file. `publish` gets `contents: write` (create the release) and
+  `id-token` and `attestations` (sign provenance), but it only downloads what `build` produced,
+  signs it and publishes it. CI stays read-only.
 - **Provenance:** `gh attestation verify pitwall-X.Y.Z-py3-none-any.whl --repo Ekanth-Sai/pitwall`
   checks that a downloaded file was built by this workflow from this repo.
 - No PyPI upload: releases live on GitHub only (GHCR images start at P6.R).

@@ -30,6 +30,34 @@ def test_last_section_stops_at_the_link_definitions() -> None:
     assert notes(CHANGELOG, "0.1.0") == "### Added\n- Track outline"
 
 
+def test_link_definitions_and_code_inside_a_section_stay_in_it() -> None:
+    changelog = """## [0.1.0] - 2026-11-03
+
+### Added
+- See [the PR][pr]
+
+[pr]: https://example.com/pr/1
+
+```markdown
+## not a heading
+```
+
+### Fixed
+- Thing
+
+[0.1.0]: https://example.com/v0.1.0
+"""
+    body = notes(changelog, "0.1.0")
+    assert body.startswith("### Added")
+    assert "[pr]: https://example.com/pr/1" in body
+    assert "## not a heading" in body
+    assert body.endswith("### Fixed\n- Thing")
+
+
+def test_without_link_definitions_the_last_section_runs_to_the_end() -> None:
+    assert notes("## [0.1.0] - 2026-11-03\n\n- Track outline\n", "0.1.0") == "- Track outline"
+
+
 def test_missing_version_is_an_error() -> None:
     with pytest.raises(ReleaseError, match=r"no section for 0\.3\.0"):
         notes(CHANGELOG, "0.3.0")

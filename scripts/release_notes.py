@@ -11,8 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 _TAG = re.compile(r"v(?P<version>\d+\.\d+\.\d+)")
 # Keep a Changelog: a release starts at "## [0.1.0] - 2026-11-03"
 _RELEASE = re.compile(r"^## \[(?P<version>[^\]]+)\].*$", re.MULTILINE)
-# a section ends at the next release heading or at the link definitions at the bottom
-_END = re.compile(r"^(## |\[[^\]]+\]: )", re.MULTILINE)
+# the link definitions at the very bottom ("[0.1.0]: https://..."); a "## " or "[x]: " line
+# inside a section is part of that section, so only the next release heading or this ends it
+_FOOTER = re.compile(r"(?:^\[[^\]]+\]: \S+\n*)+\Z", re.MULTILINE)
 
 
 class ReleaseError(Exception):
@@ -28,10 +29,12 @@ def version_of(tag: str) -> str:
 
 def notes(changelog: str, version: str) -> str:
     """The body of the changelog section for version, without its heading."""
-    for heading in _RELEASE.finditer(changelog):
+    headings = list(_RELEASE.finditer(changelog))
+    footer = _FOOTER.search(changelog)
+    bottom = footer.start() if footer else len(changelog)
+    for heading, after in zip(headings, [*headings[1:], None], strict=True):
         if heading["version"] == version:
-            end = _END.search(changelog, heading.end() + 1)
-            body = changelog[heading.end() : end.start() if end else len(changelog)].strip()
+            body = changelog[heading.end() : after.start() if after else bottom].strip()
             if not body:
                 raise ReleaseError(f"CHANGELOG.md has an empty section for {version}")
             return body

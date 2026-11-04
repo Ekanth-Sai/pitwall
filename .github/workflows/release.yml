@@ -4,29 +4,30 @@ on:
   push:
     tags: ["v*"]
 
-# Least privilege by default; only the release job below can write
+# Least privilege by default; only the publish job below can write
 permissions:
   contents: read
 
 jobs:
-  release:
+  # Read-only: dependencies and tests run here, so nothing in this job can push or sign
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Create the GitHub release
-      id-token: write # Sign the build provenance
-      attestations: write
-
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Full history, to check the tag is on main
+          persist-credentials: false # Don't leave the token in .git/config
 
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
+      # Standard library only, so a mistyped tag fails before anything is installed
+      - name: Tag matches pyproject.toml and CHANGELOG.md
+        run: python3 scripts/release_notes.py "$GITHUB_REF_NAME" > notes.md
 
       - name: Tag is on main
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false # Never restore a cache into a build that gets signed
 
       - name: Install
         run: uv sync --locked
@@ -34,20 +35,44 @@ jobs:
       - name: Checks
         run: make check
 
-      - name: Notes (fails unless the tag matches pyproject.toml and CHANGELOG.md)
-        run: uv run python scripts/release_notes.py "$GITHUB_REF_NAME" > notes.md
+      - name: Audit dependencies
+        run: make audit
 
       - name: Build wheel and sdist
         run: make build
 
-      - name: Smoke test the wheel in a clean environment
+      - name: Smoke test both in clean environments, with the locked dependency versions
         run: |
-          uv venv /tmp/smoke
-          uv pip install --python /tmp/smoke dist/*.whl
-          /tmp/smoke/bin/python -c "import pitwall; print(pitwall.__version__)" > installed.txt
-          test "$(cat installed.txt)" = "${GITHUB_REF_NAME#v}"
+          uv export --no-dev --no-emit-project --no-hashes -q -o "$RUNNER_TEMP/constraints.txt"
+          for dist in dist/*.whl dist/*.tar.gz; do
+            venv="$(mktemp -d)/venv"
+            uv venv "$venv"
+            uv pip install --python "$venv" -c "$RUNNER_TEMP/constraints.txt" "$dist"
+            test "$("$venv/bin/python" -c 'import pitwall; print(pitwall.__version__)')" = "${GITHUB_REF_NAME#v}"
+          done
 
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: |
+            dist/
+            notes.md
+          if-no-files-found: error
+
+  # Writes, but runs no project code: it only signs and publishes what build produced
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Create the GitHub release
+      id-token: write # Sign the build provenance
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
 
@@ -56,4 +81,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$GITHUB_REF_NAME" dist/*
-          --verify-tag --title "pitwall $GITHUB_REF_NAME" --notes-file notes.md
+          --repo "$GITHUB_REPOSITORY" --verify-tag
+          --title "pitwall $GITHUB_REF_NAME" --notes-file notes.md

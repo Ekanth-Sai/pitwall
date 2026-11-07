@@ -3,18 +3,17 @@
 Run from the repo root: uv run python scripts/figures/phase0.py
 """
 
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from matplotlib.figure import Figure
-from openf1 import Paced  # sibling script: the stopgap pacing until P2.8
 from track import Plotter, bare
 
 from pitwall.ingest.openf1 import BASE_URL, Driver, LocationSample, OpenF1Client, Row
-from pitwall.ingest.transport import CachedTransport, HttpTransport
+from pitwall.ingest.transport import CachedTransport, HttpTransport, PacedTransport
+from pitwall.replay.colours import FALLBACK, ink_on
 from pitwall.track.laps import last_lap_end
 from pitwall.track.outline import TrackOutline
 
@@ -64,20 +63,6 @@ def fetch(client: OpenF1Client) -> Race:
     )
 
 
-def ink_on(colour: str) -> str:
-    """Black or white, whichever has more WCAG contrast on a team colour (hex without '#')."""
-    r, g, b = (_linear(int(colour[i : i + 2], 16)) for i in (0, 2, 4))
-    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    # black wins when (L + 0.05) / 0.05 > 1.05 / (L + 0.05), i.e. L > sqrt(0.0525) - 0.05
-    return "black" if luminance > math.sqrt(0.0525) - 0.05 else "white"
-
-
-def _linear(channel: int) -> float:
-    """An sRGB channel (0-255) as linear light (0-1): screens store it gamma-encoded."""
-    c = channel / 255
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-
-
 def field_figure(
     track: TrackOutline, field: list[LocationSample], drivers: dict[int, Driver], snap: datetime
 ) -> Figure:
@@ -92,7 +77,7 @@ def field_figure(
     teams: dict[str, str] = {}
     for number, sample in sorted(latest.items()):
         driver = drivers.get(number)
-        colour = driver.team_colour if driver and driver.team_colour else "888888"
+        colour = driver.team_colour if driver and driver.team_colour else FALLBACK
         if driver:
             teams.setdefault(driver.team, colour)
         (x,), (y,) = plot.turn([(sample.x, sample.y)])
@@ -184,7 +169,7 @@ def _first(pair: tuple[datetime, Row]) -> datetime:
 
 def main() -> None:
     with HttpTransport.create(BASE_URL) as http:
-        race = fetch(OpenF1Client(CachedTransport(Paced(http), CACHE)))
+        race = fetch(OpenF1Client(CachedTransport(PacedTransport(http), CACHE)))
     lead = winner(race.positions)
     gaps, skipped = gaps_figure(race.intervals, race.start, lead, race.drivers)
     print(f"winner: car {lead}; gap rows that aren't seconds: {skipped}")

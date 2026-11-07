@@ -1,4 +1,4 @@
-"""Figures for docs/design/track.md: the outline against the raw lap, and the pit lane.
+"""Figures for docs/design/track.md: OpenF1's axes, the outline against the raw lap, the pit lane.
 
 Run from the repo root: uv run python scripts/figures/track.py
 """
@@ -94,6 +94,64 @@ def room_below(ax: Axes, share: float) -> tuple[float, float, float, float]:
     return (0.25, 0.0, 0.5, share)
 
 
+def axes_figure(track: TrackOutline, lap: Lap, raw: Sequence[Point]) -> Figure:
+    """OpenF1's own frame, before any turning: where (0, 0) is, and what a lap's first steps are."""
+    fig = Figure(figsize=(11, 7), layout="constrained")
+    whole, steps = fig.subplots(1, 2, width_ratios=(1, 1.15))
+
+    circuit = [*track.circuit, track.circuit[0]]
+    whole.plot(*zip(*circuit, strict=True), color=TRACK, lw=2, label="circuit")
+    if track.pit_lane is not None:
+        whole.plot(*zip(*track.pit_lane, strict=True), color=PIT, lw=1, ls="--", label="pit lane")
+    whole.axhline(0, color="black", lw=0.8)
+    whole.axvline(0, color="black", lw=0.8)
+    origin_gap = min(math.dist((0, 0), p) for p in track.circuit) / 10
+    whole.scatter(
+        [0], [0], s=40, color=RAW, zorder=3, label=f"(0, 0): {origin_gap:.0f} m off the track"
+    )
+    (x0, y0), (x3, y3) = raw[0], raw[3]
+    whole.scatter([x0], [y0], s=30, color="black", zorder=3, label=f"p0 = ({x0:g}, {y0:g})")
+    # an arrow along the way the car is going, stretched to be seen at this scale
+    whole.annotate("", xy=(x3, y3 + 2500), xytext=(x0, y0), arrowprops={"arrowstyle": "->"})
+    whole.set_aspect("equal")
+    whole.set_xlabel("x (dm), grows to the right")
+    whole.set_ylabel("y (dm), grows up")
+    whole.legend(loc="upper left", fontsize=8, frameon=False)
+    whole.set_title("Monza in OpenF1's axes, before turning")
+
+    first = raw[:6]
+    steps.plot(*zip(*first, strict=True), color=TRACK, lw=1, zorder=1)
+    steps.scatter(*zip(*first, strict=True), s=30, color="black", zorder=3)
+    for i, (x, y) in enumerate(first):
+        right = 40 if i == 0 else 8  # p0's label goes past the triangle
+        steps.annotate(
+            f"p{i} = ({x:g}, {y:g})", (x, y), xytext=(right, -4), textcoords="offset points"
+        )
+    (px, py), (qx, qy) = first[0], first[1]
+    steps.plot([px, qx, qx], [py, py, qy], color=RAW, lw=1, ls="--")
+    steps.annotate(
+        f"dx = {qx - px:g}",
+        ((px + qx) / 2, py),
+        xytext=(0, -14),
+        textcoords="offset points",
+        ha="center",
+        color=RAW,
+    )
+    steps.annotate(
+        f"dy = {qy - py:g}",
+        (qx, (py + qy) / 2),
+        xytext=(6, 0),
+        textcoords="offset points",
+        color=RAW,
+    )
+    steps.set_xlim(first[0][0] - 10, first[-1][0] + 60)  # room for the labels
+    steps.set_xlabel("x (dm): note the scale, x is stretched next to y")
+    steps.set_ylabel("y (dm)")
+    steps.spines[["top", "right"]].set_visible(False)
+    steps.set_title(f"Lap {lap.number}'s first {len(first)} samples, and the step p0 to p1")
+    return fig
+
+
 def outline_figure(plot: Plotter, lap: Lap, raw: Sequence[Point]) -> Figure:
     fig = Figure(figsize=(10, 7), layout="constrained")  # no pyplot: no window, no global state
     ax = fig.subplots()
@@ -167,8 +225,10 @@ def main() -> None:
     stop = pit_stop(laps, samples, track.circuit)  # the stop the pit lane was drawn from
     if lap is None or stop is None:
         raise SystemExit(f"car {CAR} needs a racing lap and a pit stop")
+    raw = xy(lap_samples(lap, samples))
     figures = {
-        "track_outline.png": outline_figure(plot, lap, xy(lap_samples(lap, samples))),
+        "track_axes.png": axes_figure(track, lap, raw),
+        "track_outline.png": outline_figure(plot, lap, raw),
         "track_pit_lane.png": pit_figure(plot, stop.samples),
     }
 

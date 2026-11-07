@@ -6,6 +6,21 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
 
 ## [Unreleased]
 
+### Added
+- `pitwall.replay`: one race as compact JSON for the browser replay (`RaceReplay`). Every car's
+  on-track positions at the full ~4 Hz as delta-encoded integer columns, plus drivers, team colours
+  with readable ink, and the track outline. `make export` writes Monza 2024 to
+  `frontend/public/races/monza-2024.json`: 20 cars, 353,980 samples, 4.08 MB (1.27 MB gzipped).
+  Format: [docs/design/replay.md](docs/design/replay.md).
+- `PacedTransport` (requests spaced apart) and `pitwall.files.write_atomic`, shared by the cache
+  and the export.
+- `docs/design/track.md`: OpenF1's axes, a sample, "no fix" at `(0, 0)` and the distance maths,
+  worked through on real data, with a new figure (`track_axes.png`).
+
+### Changed
+- Team colours are checked when a driver row is parsed: 6 hex digits, upper case, with a `#` or
+  spaces removed. Anything else counts as no colour (grey), instead of reaching the code unchecked.
+
 ## [0.1.0] - 2026-11-04
 
 Phase 0: setup, and a first look at the data. Write-up: [docs/phases/phase0.md](https://github.com/Ekanth-Sai/pitwall/blob/v0.1.0/docs/phases/phase0.md).

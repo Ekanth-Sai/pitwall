@@ -2,8 +2,9 @@
 
 import hashlib
 import json
-import os
-import tempfile
+import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Self
@@ -11,6 +12,7 @@ from typing import Protocol, Self
 import httpx
 
 from pitwall.errors import SourceError
+from pitwall.files import write_atomic
 
 Params = dict[str, str | int]
 
@@ -52,6 +54,37 @@ class HttpTransport:
         self.close()
 
 
+class PacedTransport:
+    """Spaces requests at least interval seconds apart. OpenF1 allows 3 a second, and answered
+    the 5th in 1.3 s with 429.
+
+    Goes under the cache, so cached runs never wait. P2.8 replaces it with a token bucket.
+    """
+
+    def __init__(
+        self,
+        inner: Transport,
+        interval: float = 0.4,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        if interval < 0:
+            raise ValueError(f"interval must be >= 0, got {interval}")
+        self._inner = inner
+        self._interval = interval
+        self._clock = clock
+        self._sleep = sleep
+        self._last = -math.inf  # so the first request never waits
+
+    def get(self, endpoint: str, params: Params) -> Response:
+        wait = self._last + self._interval - self._clock()
+        if wait > 0:
+            self._sleep(wait)
+        self._last = self._clock()
+        return self._inner.get(endpoint, params)
+
+
 class CachedTransport:
     """Caches 200 responses on disk. Errors and 404s are not cached."""
 
@@ -65,23 +98,10 @@ class CachedTransport:
             return Response(status=200, body=path.read_bytes())
         response = self._inner.get(endpoint, params)
         if response.status == 200:
-            self._write(path, response.body)
+            write_atomic(path, response.body)
         return response
 
     def _path(self, endpoint: str, params: Params) -> Path:
         key = json.dumps(params, sort_keys=True)
         digest = hashlib.sha256(key.encode(), usedforsecurity=False).hexdigest()[:16]
         return self._dir / endpoint / f"{digest}.json"
-
-    @staticmethod
-    def _write(path: Path, body: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # unique temp file per writer, so concurrent misses on one key can't collide
-        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(body)
-            os.replace(tmp, path)  # atomic rename: a crash never leaves a half written file
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise

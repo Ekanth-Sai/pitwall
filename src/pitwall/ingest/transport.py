@@ -2,8 +2,11 @@
 
 import hashlib
 import json
+import math
 import os
 import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Self
@@ -50,6 +53,37 @@ class HttpTransport:
 
     def __exit__(self, *exc_info: object) -> None:
         self.close()
+
+
+class PacedTransport:
+    """Spaces requests at least interval seconds apart. OpenF1 allows 3 a second, and answered
+    the 5th in 1.3 s with 429.
+
+    Goes under the cache, so cached runs never wait. P2.8 replaces it with a token bucket.
+    """
+
+    def __init__(
+        self,
+        inner: Transport,
+        interval: float = 0.4,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        if interval < 0:
+            raise ValueError(f"interval must be >= 0, got {interval}")
+        self._inner = inner
+        self._interval = interval
+        self._clock = clock
+        self._sleep = sleep
+        self._last = -math.inf  # so the first request never waits
+
+    def get(self, endpoint: str, params: Params) -> Response:
+        wait = self._last + self._interval - self._clock()
+        if wait > 0:
+            self._sleep(wait)
+        self._last = self._clock()
+        return self._inner.get(endpoint, params)
 
 
 class CachedTransport:

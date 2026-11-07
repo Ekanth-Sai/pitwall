@@ -6,7 +6,13 @@ import httpx
 import pytest
 
 from pitwall.errors import SourceError
-from pitwall.ingest.transport import CachedTransport, HttpTransport, Params, Response
+from pitwall.ingest.transport import (
+    CachedTransport,
+    HttpTransport,
+    PacedTransport,
+    Params,
+    Response,
+)
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -61,6 +67,62 @@ def test_http_context_manager_closes_client() -> None:
     with transport:
         pass
     assert client.is_closed
+
+
+# PacedTransport
+
+
+class FakeClock:
+    """Time that only moves when the transport sleeps, so waits are exact."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def paced(clock: FakeClock, interval: float = 0.4) -> tuple[PacedTransport, StubTransport]:
+    inner = StubTransport(Response(200, b"[]"))
+    return PacedTransport(inner, interval, clock=clock, sleep=clock.sleep), inner
+
+
+def test_paced_first_request_does_not_wait() -> None:
+    clock = FakeClock()
+    transport, inner = paced(clock)
+    assert transport.get("location", {"session_key": 1}) == Response(200, b"[]")
+    assert clock.sleeps == []
+    assert inner.calls == [("location", {"session_key": 1})]
+
+
+def test_paced_back_to_back_requests_wait_the_interval() -> None:
+    clock = FakeClock()
+    transport, _ = paced(clock)
+    transport.get("location", {})
+    transport.get("location", {})
+    transport.get("location", {})
+    assert clock.sleeps == pytest.approx([0.4, 0.4])
+
+
+def test_paced_waits_only_for_what_is_left() -> None:
+    clock = FakeClock()
+    transport, _ = paced(clock)
+    transport.get("location", {})
+    clock.now += 0.3  # the caller spent 0.3 s on something else
+    transport.get("location", {})
+    clock.now += 1.0
+    transport.get("location", {})
+    assert clock.sleeps == pytest.approx([0.1])
+
+
+def test_paced_rejects_negative_interval() -> None:
+    with pytest.raises(ValueError, match="interval must be >= 0"):
+        PacedTransport(StubTransport(Response(200, b"")), -0.1)
 
 
 # CachedTransport

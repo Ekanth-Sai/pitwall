@@ -1,4 +1,4 @@
-.PHONY: fmt lint typecheck test check audit figures build
+.PHONY: fmt lint typecheck test check audit figures build export
 
 fmt:
 	uv run ruff format .
@@ -28,3 +28,6 @@ figures:
 build:
 	rm -rf dist
 	uv build
+
+export:
+	uv run python scripts/export_race.py --year 2024 --circuit Monza

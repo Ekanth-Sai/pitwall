@@ -3,7 +3,6 @@
 Run from the repo root: uv run python scripts/figures/openf1.py
 """
 
-import time
 from collections.abc import Sequence
 from datetime import UTC, timedelta
 from pathlib import Path
@@ -12,7 +11,7 @@ from matplotlib.figure import Figure
 
 from pitwall.ingest.openf1 import BASE_URL, OpenF1Client, Row, Session
 from pitwall.ingest.profile import EndpointProfile
-from pitwall.ingest.transport import CachedTransport, HttpTransport, Params, Response, Transport
+from pitwall.ingest.transport import CachedTransport, HttpTransport, PacedTransport, Params
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "data" / "cache" / "openf1"
@@ -25,23 +24,6 @@ INK = "#2b6cb0"
 SESSION_ENDPOINTS = ("intervals", "position", "stints", "pit", "race_control", "weather")
 # these send a row when something happens, not on a clock
 EVENT_FEEDS = frozenset({"position", "pit", "race_control"})
-
-
-class Paced:
-    """Waits between requests: OpenF1 allows 3 a second, and answered the 5th in 1.3 s with 429.
-
-    Sits under the cache, so cached runs don't wait. The real limiter is P2.8.
-    """
-
-    def __init__(self, inner: Transport, interval: float = 0.4) -> None:
-        self._inner = inner
-        self._interval = interval
-        self._last = 0.0
-
-    def get(self, endpoint: str, params: Params) -> Response:
-        time.sleep(max(0.0, self._last + self._interval - time.monotonic()))
-        self._last = time.monotonic()
-        return self._inner.get(endpoint, params)
 
 
 def fetch(client: OpenF1Client) -> tuple[Session, dict[str, list[Row]]]:
@@ -134,7 +116,7 @@ def rates_figure(profiles: Sequence[EndpointProfile]) -> Figure:
 
 def main() -> None:
     with HttpTransport.create(BASE_URL) as http:
-        client = OpenF1Client(CachedTransport(Paced(http), CACHE))
+        client = OpenF1Client(CachedTransport(PacedTransport(http), CACHE))
         session, rows = fetch(client)
     profiles = [EndpointProfile.of(name, endpoint_rows) for name, endpoint_rows in rows.items()]
 

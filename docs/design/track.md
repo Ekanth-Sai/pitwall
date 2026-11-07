@@ -1,7 +1,7 @@
 # Track: circuit outline from position data (P0.7)
 
 Built up part by part: lap selection (P0.7b), geometry (P0.7c), pit lane (P0.7d),
-`TrackOutline` (P0.7e), figures (P0.7f).
+`TrackOutline` (P0.7e), figures (P0.7f). Units and axes, with worked examples, added in P1.1.
 
 ## Pipeline
 
@@ -22,12 +22,108 @@ flowchart LR
     K --> L["pit lane path"]
 ```
 
-## Units
+## Units and axes
 
-OpenF1 `x`, `y`, `z` are integers in **decimetres**. Measured on Monza 2024 (session 9590),
-car 16, lap 39: the outline is about 57,490 units long, i.e. **5.749 km** against the official
-5.793 km. The 0.8% shortfall is expected: a polyline cuts corners between samples, and
+OpenF1 `x`, `y`, `z` are integers in **decimetres** (1 dm = 10 cm), with `y` pointing up.
+Samples arrive about every 0.24 s (roughly 4 Hz), unevenly. Measured on Monza 2024 (session
+9590), car 16, lap 39: the outline is about 57,490 units long, i.e. **5.749 km** against the
+official 5.793 km. The 0.8% shortfall is expected: a polyline cuts corners between samples, and
 the racing line is shorter than the official centreline.
+
+![Monza in OpenF1's own axes with the origin marked, and lap 39's first six samples](../figures/track_axes.png)
+
+### The axes
+
+OpenF1 uses an ordinary maths grid: `x` grows to the right, `y` grows **up**, and one unit is
+one decimetre. Where the origin `(0, 0)` sits is the timing system's choice, not a point on the
+track. At Monza it's an empty spot 131 m to the right of the main straight (left figure, red).
+The axes aren't lined up with the track either, which is why `TrackOutline` stores a
+`rotation` ([TrackOutline](#trackoutline-p07e)).
+
+Screens (SVG, canvas) count `y` **down**, so drawing means flipping `y`. Rotate first in
+OpenF1's frame, flip last: a flip reverses the direction of a turn, so flipping first and
+then rotating by the same angle turns the track the wrong way. P1.3's projection follows that
+order.
+
+### What a sample looks like
+
+One row exactly as OpenF1 returns it, car 16's first sample on lap 39:
+
+```json
+{"date": "2024-09-01T13:57:21.848000+00:00", "session_key": 9590, "meeting_key": 1244,
+ "driver_number": 16, "x": -1334, "y": -219, "z": 1874}
+```
+
+At 13:57:21.848 UTC car 16 was 133.4 m left of the origin and 21.9 m below it. `z` is height,
+also in decimetres; pitwall draws in 2D and ignores it. `date` is when the position was
+measured; its uneven spacing is why the outline is resampled by distance
+([Arc-length resampling](#arc-length-resampling)).
+
+### `(0, 0)` means "no fix"
+
+A *fix* is navigation language for "a measured position", as in "the GPS has a fix". When the
+timing system has no position for a car (in the garage, before the start), OpenF1 still sends
+rows on schedule, with every coordinate set to 0. Car 16 at 12:20 UTC, 43 minutes before the
+start:
+
+```json
+{"date": "2024-09-01T12:20:00.147000+00:00", "driver_number": 16, "x": 0, "y": 0, "z": 0}
+{"date": "2024-09-01T12:20:00.347000+00:00", "driver_number": 16, "x": 0, "y": 0, "z": 0}
+{"date": "2024-09-01T12:20:00.547000+00:00", "driver_number": 16, "x": 0, "y": 0, "z": 0}
+```
+
+So `(0, 0)` means "unknown", not a place. But it *is* also a place on this grid, 131 m off
+the track, and a dot drawn there would jump off the main straight and back. These rows are
+dropped once, at the boundary: `LocationSample.on_track` is false for them
+([ingest.md](ingest.md)). In the Monza race window itself no car had one; they show up before
+the start.
+
+### A lap as a list of points
+
+A lap is a list of points $p_0, p_1, \dots, p_{N-1}$ with timestamps, numbered from 0 like
+a Python list, so the last index is $N - 1$. Lap 39 has $N = 318$:
+
+| Point | t (s since p0) | x (dm) | y (dm) |
+|---|---|---|---|
+| p0 | 0.000 | −1334 | −219 |
+| p1 | 0.301 | −1321 | −77 |
+| p2 | 0.561 | −1300 | 154 |
+| p3 | 0.841 | −1275 | 442 |
+| p4 | 1.241 | −1240 | 858 |
+| p5 | 1.641 | −1216 | 1131 |
+| … | … | … | … |
+| p317 | 83.421 | −1368 | −615 |
+
+The gaps are 0.301, 0.260, 0.280, 0.400 and 0.400 s. p317 is back near p0, just before the
+line, which closes the loop. Everything below works on these points in the plane:
+
+$$p_i = (x_i, y_i), \qquad \lVert p - q \rVert = \sqrt{(x_p - x_q)^2 + (y_p - y_q)^2}$$
+
+### The distance, worked through
+
+From p0 = (−1334, −219) to p1 = (−1321, −77), the right triangle in the figure:
+
+$$\Delta x = -1321 - (-1334) = 13, \qquad \Delta y = -77 - (-219) = 142$$
+
+$$\lVert p_1 - p_0 \rVert = \sqrt{13^2 + 142^2} = \sqrt{169 + 20164} = \sqrt{20333} \approx 142.6\ \text{dm} = 14.26\ \text{m}$$
+
+Almost all of it is $\Delta y$: the car is heading up the main straight. The same for each
+step, with speed $v = \lVert p_{i+1} - p_i \rVert / (t_{i+1} - t_i)$, times 3.6 for km/h:
+
+| Step | Δx | Δy | Distance | Δt | Speed |
+|---|---|---|---|---|---|
+| p0 → p1 | 13 | 142 | 14.26 m | 0.301 s | 171 km/h |
+| p1 → p2 | 21 | 231 | 23.20 m | 0.260 s | 321 km/h |
+| p2 → p3 | 25 | 288 | 28.91 m | 0.280 s | 372 km/h |
+| p3 → p4 | 35 | 416 | 41.75 m | 0.400 s | 376 km/h |
+| p4 → p5 | 24 | 273 | 27.41 m | 0.400 s | 247 km/h |
+| **p0 → p5** | | | **135.52 m** | **1.641 s** | **297 km/h** |
+
+Over the five steps the car does 297 km/h, right for Monza's main straight. Single steps say
+171 to 376 km/h, which the car didn't do. Most likely each timestamp is a little off from when
+the position was really measured, and over a 0.3 s step a few tens of milliseconds is a large
+share. So a speed from one step isn't trusted: average over several. The same caution applies
+to P1.4's interpolation and P7's implausible-jump detector.
 
 ## Lap selection (P0.7b)
 
@@ -342,7 +438,7 @@ lap after the flag, which nothing here uses.
 
 ## Figures (P0.7f)
 
-`scripts/figures/track.py` (`make figures`) draws both figures from the cached OpenF1 data
+`scripts/figures/track.py` (`make figures`) draws three figures from the cached OpenF1 data
 into `docs/figures/`. The data, car and constants are the same as everywhere above.
 
 ```mermaid
@@ -351,13 +447,21 @@ flowchart LR
     A --> C["representative_lap, lap_samples"]
     A --> D["pit_stop: the stop build used"]
     B --> E["Plotter: rotate, decimetres to metres"]
+    B --> J["axes_figure: OpenF1's own frame, unrotated"]
+    C --> J
     C --> F["outline_figure"]
     D --> G["pit_figure"]
     E --> F
     E --> G
+    J --> K["track_axes.png"]
     F --> H["track_outline.png"]
     G --> I["track_pit_lane.png"]
 ```
+
+The axes figure is the only one drawn in OpenF1's frame and units, without `Plotter`: its
+point is to show the raw coordinates. It's described in [Units and axes](#units-and-axes).
+Its right panel isn't drawn at equal scale, so that six points 135 m apart along a straight
+don't sit on top of each other; the axis labels say so.
 
 ### Circuit outline
 

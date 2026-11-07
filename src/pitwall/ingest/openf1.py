@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.openf1.org/v1/"
 DEFAULT_CHUNK = timedelta(minutes=10)
 _PAD = timedelta(seconds=1)
+_HEX = re.compile(r"[0-9A-Fa-f]{6}")
 
 Row = dict[str, Any]
 
@@ -177,7 +178,7 @@ class Driver:
     acronym: str
     full_name: str
     team: str
-    team_colour: str | None  # hex without '#'; OpenF1 sometimes sends null
+    team_colour: str | None  # 6 upper-case hex digits without '#', or None if OpenF1 has none
 
     @classmethod
     def from_row(cls, row: Row) -> Self:
@@ -186,7 +187,7 @@ class Driver:
             acronym=_text(row["name_acronym"]),
             full_name=_text(row["full_name"]),
             team=_text(row["team_name"]),
-            team_colour=row["team_colour"] or None,
+            team_colour=_colour(row["team_colour"]),
         )
 
 
@@ -246,6 +247,14 @@ def _text(value: object) -> str:
     if not isinstance(value, str):
         raise TypeError(f"expected a string, got {type(value).__name__}")
     return value
+
+
+def _colour(value: object) -> str | None:
+    """OpenF1 sometimes sends null, so anything that isn't 6 hex digits counts as no colour."""
+    if not isinstance(value, str):
+        return None
+    hex_digits = value.strip().removeprefix("#")
+    return hex_digits.upper() if _HEX.fullmatch(hex_digits) else None
 
 
 def _parse[T](rows: list[Row], factory: Callable[[Row], T], endpoint: str) -> list[T]:

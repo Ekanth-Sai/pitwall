@@ -80,7 +80,7 @@ What it means here:
 - **Real fetches can hit it.** A single request takes 0.1 to 2 s, so small ones (`pit`,
   `stints`, `weather`) can come back fast enough to make 4 in a second. P0.7 never did,
   because its location chunks take about 1 s each.
-- **The survey script waits 0.4 s between requests** (`Paced`, under the cache, so cached runs
+- **The survey script waits 0.4 s between requests** (`PacedTransport` in `pitwall.ingest.transport`, under the cache, so cached runs
   don't wait). That's a stopgap, not the fix.
 - **P2.8 builds the real one:** a token bucket at 3/s and 30/min, and a retry that honours
   `Retry-After`. These measurements are its spec. The minute limit wasn't measured on purpose:

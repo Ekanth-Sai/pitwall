@@ -5,10 +5,12 @@ Run from the repo root: uv run python scripts/export_race.py --year 2024 --circu
 
 import argparse
 import gzip
+import re
 import sys
 from pathlib import Path
 
 from pitwall.errors import PitwallError
+from pitwall.files import write_atomic
 from pitwall.ingest.openf1 import BASE_URL, OpenF1Client
 from pitwall.ingest.transport import CachedTransport, HttpTransport, PacedTransport
 from pitwall.replay.export import RaceReplay
@@ -40,7 +42,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--car", type=int, default=16, help="whose laps draw the track outline")
     parser.add_argument("--out", type=Path, help="default: frontend/public/races/<circuit>-<year>")
     args = parser.parse_args(argv[1:])
-    out: Path = args.out or RACES / f"{args.circuit.lower()}-{args.year}.json"
+    slug = re.sub(r"\s+", "-", args.circuit.strip().lower())  # Las Vegas: las-vegas
+    out: Path = args.out or RACES / f"{slug}-{args.year}.json"
 
     try:
         with HttpTransport.create(BASE_URL) as http:
@@ -51,8 +54,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     text = replay.to_json().encode()
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(text)
+    write_atomic(out, text)
     samples = sum(len(car.t) for car in replay.cars)
     print(f"wrote {out}: {len(replay.cars)} cars, {samples} samples")
     print(f"size: {len(text) / 1e6:.2f} MB, {len(gzip.compress(text)) / 1e6:.2f} MB gzipped")

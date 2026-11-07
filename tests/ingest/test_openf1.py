@@ -164,6 +164,31 @@ def test_drivers_parsed_with_null_colours() -> None:
     assert client.drivers(9590) == [Driver(16, "LEC", "Charles LECLERC", "Ferrari", None)]
 
 
+@pytest.mark.parametrize(
+    ("sent", "kept"),
+    [
+        ("E80020", "E80020"),
+        ("0093cc", "0093CC"),
+        ("#3671C6", "3671C6"),
+        (" FF8000 ", "FF8000"),
+        ("", None),
+        ("FFF", None),
+        ("GGGGGG", None),
+        (3671, None),
+    ],
+)
+def test_team_colour_is_six_hex_digits_or_none(sent: object, kept: str | None) -> None:
+    row = {
+        "driver_number": 16,
+        "name_acronym": "LEC",
+        "full_name": "Charles LECLERC",
+        "team_name": "Ferrari",
+        "team_colour": sent,
+    }
+    client, _ = client_returning(ok([row]))
+    assert client.drivers(9590)[0].team_colour == kept
+
+
 def test_bad_row_shape_raises_schema_error() -> None:
     client, _ = client_returning(ok([{"driver_number": 16}]))  # missing fields
     with pytest.raises(SchemaError, match="drivers: unexpected row shape") as exc_info:

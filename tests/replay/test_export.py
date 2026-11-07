@@ -89,6 +89,12 @@ def test_build_leaves_out_cars_without_samples_and_unknown_cars() -> None:
     assert [car.driver.number for car in replay.cars] == [81]
 
 
+def test_build_makes_one_car_per_driver_number() -> None:
+    renamed = Driver(16, "LEC", "Charles LECLERC", "Scuderia Ferrari", "E80020")
+    replay = build([sample(16, 1.0)], (LEC, renamed, LEC))
+    assert [car.driver for car in replay.cars] == [LEC]
+
+
 def test_build_keeps_one_sample_per_millisecond() -> None:
     replay = build([sample(16, 1.0, x=1), sample(16, 1.0002, x=2), sample(16, 1.002, x=3)])
     assert replay.cars[0].t == (1000, 1002)
@@ -133,7 +139,7 @@ def test_json_has_the_session_window_and_track() -> None:
     data = json.loads(build([sample(16, 1.0)]).to_json())
     assert data["format"] == FORMAT
     assert data["session"] == {"name": "Race", "location": "Monza", "year": 2024}
-    assert data["start"] == "2024-09-01T13:03:00+00:00"
+    assert data["start"] == "2024-09-01T13:03:00.000+00:00"
     assert data["duration_ms"] == 190_500  # 160.5 s of laps + 30 s tail
     assert data["track"] == json.loads(TRACK.to_json())
 

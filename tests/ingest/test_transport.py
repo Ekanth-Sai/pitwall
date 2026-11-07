@@ -186,7 +186,7 @@ def test_failed_write_cleans_up_temp_file(tmp_path: Path, monkeypatch: pytest.Mo
     def boom(*_args: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr("pitwall.ingest.transport.os.replace", boom)
+    monkeypatch.setattr("pitwall.files.os.replace", boom)
     cached = CachedTransport(StubTransport(Response(200, b"[]")), tmp_path)
 
     with pytest.raises(OSError, match="disk full"):

@@ -17,7 +17,9 @@ flowchart LR
 
 Run it with `make export`: Monza 2024 by default. `--year`, `--circuit`, `--car` (whose laps draw the
 outline) and `--out` pick another race. Requests go through `PacedTransport` (0.4 s apart, under the
-cache) and `CachedTransport`, so a second run makes no requests.
+cache) and `CachedTransport`, so a second run makes no requests. The file is written to a temp file
+and renamed into place (`pitwall.files.write_atomic`), so an interrupted export never leaves half a
+file to be committed by mistake.
 
 ## Format (version 1)
 
@@ -25,7 +27,7 @@ cache) and `CachedTransport`, so a second run makes no requests.
 {
   "format": 1,
   "session": {"name": "Race", "location": "Monza", "year": 2024},
-  "start": "2024-09-01T13:03:34.412000+00:00",
+  "start": "2024-09-01T13:03:34.412+00:00",
   "duration_ms": 4592487,
   "track": {"format": 1, "rotation": -64.63, "bounds": "...", "circuit": "...", "pit_lane": "..."},
   "cars": [
@@ -40,18 +42,22 @@ cache) and `CachedTransport`, so a second run makes no requests.
 }
 ```
 
-- **`start`** is the race start (the earliest lap 1 start). **`duration_ms`** runs to 30 s after the
+- **`start`** is the race start (the earliest lap 1 start), with exactly 3 fraction digits: that's
+  the only form JavaScript's `Date` is required to parse. **`duration_ms`** runs to 30 s after the
   last lap ends, so the last cars cross the line on screen.
 - **`track`** is `TrackOutline.to_json` unchanged ([track.md](track.md)).
 - **Per car**, `t` (ms since `start`), `x` and `y` (decimetres, OpenF1's units) are columns of
   **deltas**: the first value, then each value minus the one before. Consecutive samples are 240 ms
   and a few metres apart, so most numbers have 1 to 3 digits. The frontend rebuilds the absolute
   values with a running sum.
-- **`colour`** is OpenF1's team colour, grey (`808080`) when OpenF1 sends none. **`ink`** is black or
+- **`colour`** is OpenF1's team colour as 6 upper-case hex digits, checked when the row is parsed
+  (`Driver.from_row` strips a `#` and spaces). Anything else counts as no colour and becomes grey
+  (`808080`), so one bad row can't stop the export. **`ink`** is black or
   white, whichever has more WCAG contrast on it (`pitwall.replay.colours.ink_on`), for the number on
   the dot.
 - Samples at `(0, 0)` (OpenF1's "no position") and outside the window are dropped. A car with no
-  sample left (example: a car that didn't start) is left out. Two samples in the same millisecond
+  sample left (example: a car that didn't start) is left out, and a driver number listed twice
+  becomes one car (the first row wins). Two samples in the same millisecond
   keep the first, because the frontend needs times that strictly increase.
 
 ## Decisions

@@ -68,17 +68,17 @@ class RaceReplay:
         samples: Iterable[LocationSample],
         track: TrackOutline,
     ) -> Self:
-        """Cars without an on-track sample in the window (example: a DNS) are left out."""
+        """Cars without an on-track sample in the window (example: a DNS) are left out.
+
+        A driver number listed twice becomes one car: the first row wins.
+        """
         start, end = cls.window(laps)
         by_car: defaultdict[int, list[LocationSample]] = defaultdict(list)
         for s in samples:
             if s.on_track and start <= s.time <= end:
                 by_car[s.driver].append(s)
-        cars = tuple(
-            _car(d, by_car[d.number], start)
-            for d in sorted(drivers, key=lambda d: d.number)
-            if by_car[d.number]
-        )
+        first = {d.number: d for d in reversed(drivers)}
+        cars = tuple(_car(first[n], by_car[n], start) for n in sorted(first) if by_car[n])
         if not cars:
             raise InsufficientDataError("no car has an on-track position in the race window")
         return cls(session=session, start=start, end=end, track=track, cars=cars)
@@ -91,7 +91,8 @@ class RaceReplay:
                 "location": self.session.location,
                 "year": self.session.year,
             },
-            "start": self.start.isoformat(),
+            # JavaScript's Date only defines 3 fraction digits; isoformat gives 6, or none
+            "start": self.start.isoformat(timespec="milliseconds"),
             "duration_ms": _ms(self.end - self.start),
             "track": json.loads(self.track.to_json()),
             "cars": [_car_json(car) for car in self.cars],

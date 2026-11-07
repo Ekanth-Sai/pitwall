@@ -3,8 +3,6 @@
 import hashlib
 import json
 import math
-import os
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,6 +12,7 @@ from typing import Protocol, Self
 import httpx
 
 from pitwall.errors import SourceError
+from pitwall.files import write_atomic
 
 Params = dict[str, str | int]
 
@@ -99,23 +98,10 @@ class CachedTransport:
             return Response(status=200, body=path.read_bytes())
         response = self._inner.get(endpoint, params)
         if response.status == 200:
-            self._write(path, response.body)
+            write_atomic(path, response.body)
         return response
 
     def _path(self, endpoint: str, params: Params) -> Path:
         key = json.dumps(params, sort_keys=True)
         digest = hashlib.sha256(key.encode(), usedforsecurity=False).hexdigest()[:16]
         return self._dir / endpoint / f"{digest}.json"
-
-    @staticmethod
-    def _write(path: Path, body: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # unique temp file per writer, so concurrent misses on one key can't collide
-        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(body)
-            os.replace(tmp, path)  # atomic rename: a crash never leaves a half written file
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise

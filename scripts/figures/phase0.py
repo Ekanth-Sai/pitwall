@@ -13,7 +13,7 @@ from track import Plotter, bare
 
 from pitwall.ingest.openf1 import BASE_URL, Driver, LocationSample, OpenF1Client, Row
 from pitwall.ingest.transport import CachedTransport, HttpTransport, PacedTransport
-from pitwall.replay.colours import ink_on
+from pitwall.replay.colours import FALLBACK, ink_on
 from pitwall.track.laps import last_lap_end
 from pitwall.track.outline import TrackOutline
 
@@ -77,7 +77,7 @@ def field_figure(
     teams: dict[str, str] = {}
     for number, sample in sorted(latest.items()):
         driver = drivers.get(number)
-        colour = driver.team_colour if driver and driver.team_colour else "888888"
+        colour = driver.team_colour if driver and driver.team_colour else FALLBACK
         if driver:
             teams.setdefault(driver.team, colour)
         (x,), (y,) = plot.turn([(sample.x, sample.y)])

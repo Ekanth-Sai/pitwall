@@ -9,7 +9,7 @@ with an 85% coverage gate, and a CI job.
 
 | Tool | Version | Job | Python equivalent |
 |---|---|---|---|
-| Node.js | 22 (`.nvmrc`) | Runs the tools: the browser runs the built app, not Node | the interpreter |
+| Node.js | 22 (`.nvmrc`), at least 22.22.2 (`engines`) | Runs the tools: the browser runs the built app, not Node | the interpreter |
 | pnpm | 12.17.0 (`packageManager` in `package.json`) | Installs packages from `pnpm-lock.yaml` | uv |
 | Vite | 8.3 | Dev server with instant reload; bundles the app for production | (none) |
 | React | 19.3 | Builds the page from components | (none) |
@@ -91,15 +91,27 @@ Every gate was checked to fail on purpose with a planted file:
      `packageManager`, so that pin is 12.17.0, not the 3-day-old 12.18.0.
    - `strictDepBuilds`: no dependency may run an install script unless it's listed. None needs one.
    - `--frozen-lockfile` in CI, and `pnpm audit --prod` for the packages that ship to the browser.
-   - Dependabot opens weekly grouped updates for `frontend/`, like it does for Python.
+   - Dependabot opens weekly grouped updates for `frontend/`, like it does for Python, with a
+     7-day `cooldown`. CI installs from the lockfile, so pnpm's age check never sees what
+     Dependabot writes there; the cooldown applies the same rule on Dependabot's side.
 5. **Style.** Prettier with no semicolons and single quotes (the Vite template's style), and 100
    columns to match ruff.
 6. **Tests import `describe`, `it` and `expect` from `vitest`** instead of using globals, so every
    name in a test file comes from an import a reader can follow.
 7. **Coverage leaves out `main.tsx`.** It only mounts `App` into the page. The tests render `App`
    directly.
-8. **pnpm is installed with npm into `~/.local`** (`npm install -g pnpm@12.17.0 --prefix ~/.local`). Ubuntu's corepack (0.24) is too old for pnpm 12's
-   layout and fails with `Cannot find module …/pnpm.cjs`.
+8. **pnpm is installed with npm into `~/.local`** (`npm install -g pnpm@12.17.0 --prefix
+   ~/.local`). Ubuntu's corepack (0.24) is too old for pnpm 12's layout and fails with
+   `Cannot find module …/pnpm.cjs`.
+9. **Node floor.** `engines` asks for Node 22.22.2 or later (or 24.15+), because jsdom's
+   dependencies do. CI gets the newest 22.x from `.nvmrc`. Ubuntu's own package is 22.22.1, one
+   patch behind: the tests pass on it, and pnpm only warns.
+10. **Pre-commit.** Prettier formats only the staged files, so a file still being written is left
+    alone. ESLint and `tsc` check all of `frontend/` whenever anything in it changes, because a
+    change to a config file can break every other file. `make check` stays Python-only: the
+    frontend gate is `make web-check`, and both run in CI.
+11. **ESLint also checks `.js` files** (`js.configs.recommended`, Node globals), so the config file
+    itself and any later script get linted too.
 
 ## Measured (P1.2, empty app)
 

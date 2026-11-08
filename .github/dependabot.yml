@@ -17,6 +17,9 @@ updates:
       directory: "/frontend"
       schedule:
         interval: "weekly"
+      # matches minimumReleaseAge: CI installs from the lockfile, so pnpm's own check never sees these
+      cooldown:
+        default-days: 7
       groups:
         frontend-deps:
           patterns: ["*"]

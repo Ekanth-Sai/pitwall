@@ -25,4 +25,10 @@ export default defineConfig([
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
   },
+  {
+    // plain JS run by Node, such as this file
+    files: ['**/*.js'],
+    extends: [js.configs.recommended, prettier],
+    languageOptions: { globals: globals.node },
+  },
 ])

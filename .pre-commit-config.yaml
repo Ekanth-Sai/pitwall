@@ -17,15 +17,23 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      # prettier formats only the staged files; it runs from the repo root, so it is told where
+      # frontend's ignore file is (its config file is found next to each file)
       - id: prettier
         name: prettier
-        entry: pnpm --dir frontend format
+        entry: frontend/node_modules/.bin/prettier --write --ignore-unknown --ignore-path frontend/.prettierignore
         language: system
         files: ^frontend/
-        pass_filenames: false
+      # eslint and tsc check the whole frontend, since a config change can affect every file
       - id: eslint
         name: eslint
         entry: pnpm --dir frontend lint
         language: system
-        files: ^frontend/.*\.(ts|tsx)$
+        files: ^frontend/
+        pass_filenames: false
+      - id: tsc
+        name: tsc
+        entry: pnpm --dir frontend typecheck
+        language: system
+        files: ^frontend/
         pass_filenames: false

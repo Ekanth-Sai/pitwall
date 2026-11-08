@@ -4,7 +4,7 @@
 flowchart TD
     A["You type code"] --> B["git commit"]
     B --> C{"pre-commit hooks<br/>local, ~seconds"}
-    C -->|"ruff format, ruff check, mypy strict,<br/>prettier, eslint"| D{"All pass?"}
+    C -->|"ruff format, ruff check, mypy strict,<br/>prettier, eslint, tsc"| D{"All pass?"}
     D -->|"no"| E["Commit blocked:<br/>fix and retry"]
     E --> B
     D -->|"yes"| F["git push feature branch"]

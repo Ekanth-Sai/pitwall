@@ -166,8 +166,20 @@ Planned is the sum of the sprint's estimates. Actual is filled in at the Sunday 
 | Sprint | Planned | Actual | Done | Notes |
 |---|---|---|---|---|
 | W0 (Oct 26 – Nov 1) | – | ~30 h (P0.1 to P0.7d) | P0.1–P0.6, P0.7a–d | before the schedule; used to calibrate the estimates |
-| W1 (Nov 2–8) | 11 h | | P0.7e, f, g (PR #143, merged Mon Nov 2) | sprint goal met on day 1; P0.8 (5 h) pulled in |
+| W1 (Nov 2–8) | 11 h | ~15 h (rough) | P0.7e–g, P0.8, P0.9, P0.10 (v0.1.0), P1.1, P1.2: 36 h of estimates | goal met on day 1; pulled in all of W2 and W3; Phase 0 shipped 11 days early |
+| W2 (Nov 9–15) | 12 h | | | W2's own steps already done; pulled in P1.3 (6 h) and P1.4 (6 h) from W4 |
 
 ### Retros
 
-**W1** (Nov 8): *to fill in at the review.*
+**W1** (Nov 8)
+- **Keep:** drafting in scratch, then `diff -r` against it, which caught every typo before CI did;
+  `/code-review high` before each PR, which found two real gaps (Dependabot could bypass the 7-day
+  release-age rule, and an ESLint pattern typo meant no file was linted).
+- **Stop:** typing configuration files by hand. YAML and config cost the most time and teach the
+  least; one typo silently turned ESLint off. From P1.3, Claude writes config and boilerplate, and
+  the TypeScript and React that carry the concepts are typed by hand.
+- **Try:** Prettier with format-on-save in VS Code; `pnpm format` before asking for a check;
+  checking a tool's release age before pinning it (pnpm 12.18 was 3 days old).
+- **Calibration, first data point:** about 36 h of estimates took about 15 h, so estimates may be
+  roughly 2× too high. The hours are a rough recollection, so from W2 they are logged per session;
+  the W3 recalibration rule decides whether later dates move.

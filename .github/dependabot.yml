@@ -7,8 +7,16 @@ updates:
       groups:
         python-deps:
             patterns: ["*"]
-    
+
     - package-ecosystem: "github-actions"
       directory: "/"
-      schedule: 
+      schedule:
         interval: "weekly"
+
+    - package-ecosystem: "npm" # also covers pnpm lockfiles
+      directory: "/frontend"
+      schedule:
+        interval: "weekly"
+      groups:
+        frontend-deps:
+          patterns: ["*"]

@@ -1,0 +1,5 @@
+# Supply-chain guards for installs (pnpm reads these settings here, even for one package)
+# a version must be a week old before it can be installed: most malicious releases are caught sooner
+minimumReleaseAge: 10080
+# no dependency may run install scripts unless listed here
+strictDepBuilds: true

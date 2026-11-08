@@ -4,12 +4,12 @@
 flowchart TD
     A["You type code"] --> B["git commit"]
     B --> C{"pre-commit hooks<br/>local, ~seconds"}
-    C -->|"ruff format, ruff check, mypy strict"| D{"All pass?"}
+    C -->|"ruff format, ruff check, mypy strict,<br/>prettier, eslint, tsc"| D{"All pass?"}
     D -->|"no"| E["Commit blocked:<br/>fix and retry"]
     E --> B
     D -->|"yes"| F["git push feature branch"]
     F --> G{"GitHub Actions CI<br/>clean Ubuntu VM"}
-    G -->|"uv sync locked, ruff, mypy,<br/>pytest + coverage 85%+"| H{"CI green?"}
+    G -->|"python, audit and frontend jobs"| H{"CI green?"}
     H -->|"no"| I["Fix on the branch"]
     I --> B
     H -->|"yes"| J["Pull Request"]
@@ -19,6 +19,17 @@ flowchart TD
 **Why both stages:** pre-commit gives fast local feedback but can be skipped
 and runs on my machine; CI runs on a clean VM from `uv.lock` and is the actual
 gate. `main` only receives CI-green merges.
+
+## CI jobs
+
+| Job | Steps |
+|---|---|
+| `python` | `uv sync --locked`, ruff format and check, mypy strict, pytest with the 85% coverage gate |
+| `audit` | `pip-audit` over the locked Python dependencies |
+| `frontend` (P1.2) | pnpm from `packageManager`, Node from `.nvmrc`, `pnpm install --frozen-lockfile`, `pnpm check` (Prettier, ESLint, `tsc`, Vitest with the 85% gate), `pnpm build`, `pnpm audit --prod` |
+
+The workflow also runs every Monday, so a new CVE in an unchanged dependency still turns CI red.
+The frontend's tools and choices: [frontend.md](frontend.md).
 
 ## Releases
 

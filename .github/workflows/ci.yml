@@ -46,4 +46,35 @@ jobs:
           enable-cache: true
       
       - name: Audit dependencies for known vulnerabilities
-        run: make audit  
+        run: make audit
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      # installs the pnpm version pinned in frontend/package.json ("packageManager")
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format, lint, types, tests + coverage
+        run: pnpm check
+
+      - name: Build
+        run: pnpm build
+
+      - name: Audit runtime dependencies for known vulnerabilities
+        run: pnpm audit --prod

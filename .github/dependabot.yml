@@ -7,8 +7,19 @@ updates:
       groups:
         python-deps:
             patterns: ["*"]
-    
+
     - package-ecosystem: "github-actions"
       directory: "/"
-      schedule: 
+      schedule:
         interval: "weekly"
+
+    - package-ecosystem: "npm" # also covers pnpm lockfiles
+      directory: "/frontend"
+      schedule:
+        interval: "weekly"
+      # matches minimumReleaseAge: CI installs from the lockfile, so pnpm's own check never sees these
+      cooldown:
+        default-days: 7
+      groups:
+        frontend-deps:
+          patterns: ["*"]

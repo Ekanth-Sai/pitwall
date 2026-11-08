@@ -1,4 +1,4 @@
-.PHONY: fmt lint typecheck test check audit figures build export
+.PHONY: fmt lint typecheck test check audit figures build export web-install web-fmt web-check web-build
 
 fmt:
 	uv run ruff format .
@@ -31,3 +31,16 @@ build:
 
 export:
 	uv run python scripts/export_race.py --year 2024 --circuit Monza
+
+# frontend (P1.2): pnpm runs inside frontend/
+web-install:
+	pnpm --dir frontend install --frozen-lockfile
+
+web-fmt:
+	pnpm --dir frontend format
+
+web-check:
+	pnpm --dir frontend check
+
+web-build:
+	pnpm --dir frontend build

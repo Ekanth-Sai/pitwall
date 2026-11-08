@@ -8,6 +8,7 @@
 | [openf1-data.md](openf1-data.md) | P0.8 endpoint survey: update rates, rate limits, nulls, units, oddities |
 | [track.md](track.md) | P0.7 circuit outline: lap selection, resampling, smoothing, pit lane, `TrackOutline` JSON, figures |
 | [replay.md](replay.md) | P1.1 race export for the browser replay: format, delta coding, sizes |
+| [frontend.md](frontend.md) | P1.2 browser app: stack, layout, scripts, strictness, supply-chain guards |
 | [security.md](security.md) | Security baseline (P0.5), threat model (from P4.7) |
 
 Planned: `event-log.md` (P2.1), `gateway.md` (P4.1).

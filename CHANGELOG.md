@@ -14,6 +14,11 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
   Format: [docs/design/replay.md](docs/design/replay.md).
 - `PacedTransport` (requests spaced apart) and `pitwall.files.write_atomic`, shared by the cache
   and the export.
+- `frontend/`: the browser app's scaffold (Vite, React 19, TypeScript 6 in strict mode,
+  ESLint with typescript-eslint's type-aware strict rules, Prettier, Vitest with an 85% coverage
+  gate), a `frontend` CI job, pre-commit hooks, `make web-*` targets and weekly Dependabot updates.
+  Installs refuse package versions younger than 7 days. See
+  [docs/design/frontend.md](docs/design/frontend.md).
 - `docs/design/track.md`: OpenF1's axes, a sample, "no fix" at `(0, 0)` and the distance maths,
   worked through on real data, with a new figure (`track_axes.png`).
 

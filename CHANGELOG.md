@@ -25,6 +25,8 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
 ### Changed
 - Team colours are checked when a driver row is parsed: 6 hex digits, upper case, with a `#` or
   spaces removed. Anything else counts as no colour (grey), instead of reaching the code unchecked.
+- Dependabot no longer offers TypeScript minor or major releases (typescript-eslint doesn't support
+  them yet) or `@types/node` majors (the types follow Node 22). Both move by hand.
 
 ## [0.1.0] - 2026-11-04
 

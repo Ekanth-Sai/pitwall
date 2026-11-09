@@ -1,0 +1,147 @@
+import { z } from 'zod'
+
+// The race file made by `make export` (docs/design/replay.md). It's checked here at the
+// boundary, so the rest of the app can trust its types.
+
+export class ReplayError extends Error {
+  override name = 'ReplayError'
+}
+
+const point = z.tuple([z.number(), z.number()])
+const deltas = z.array(z.int())
+
+const trackSchema = z.object({
+  format: z.literal(1),
+  rotation: z.number(),
+  bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  circuit: z.array(point).min(3),
+  pit_lane: z.array(point).min(2).nullable(),
+})
+
+const carSchema = z
+  .object({
+    number: z.int().positive(),
+    acronym: z.string(),
+    name: z.string(),
+    team: z.string(),
+    colour: z.string().regex(/^[0-9A-F]{6}$/),
+    ink: z.enum(['black', 'white']),
+    t: deltas.min(1),
+    x: deltas,
+    y: deltas,
+  })
+  .refine((car) => car.x.length === car.t.length && car.y.length === car.t.length, {
+    message: 't, x and y must have the same length',
+  })
+  .refine((car) => car.t.slice(1).every((dt) => dt > 0), {
+    message: 'times must strictly increase',
+  })
+
+const raceSchema = z.object({
+  format: z.literal(1),
+  session: z.object({ name: z.string(), location: z.string(), year: z.int() }),
+  start: z.iso.datetime({ offset: true }),
+  duration_ms: z.int().positive(),
+  track: trackSchema,
+  cars: z.array(carSchema).min(1),
+})
+
+export type Point = readonly [number, number]
+export type Bounds = readonly [number, number, number, number]
+
+export interface Track {
+  readonly rotation: number
+  readonly bounds: Bounds
+  readonly circuit: readonly Point[]
+  readonly pitLane: readonly Point[] | null
+}
+
+export interface Car {
+  readonly number: number
+  readonly acronym: string
+  readonly name: string
+  readonly team: string
+  readonly colour: string
+  readonly ink: 'black' | 'white'
+  readonly t: Float64Array
+  readonly x: Float64Array
+  readonly y: Float64Array
+}
+
+export interface Race {
+  readonly name: string
+  readonly location: string
+  readonly year: number
+  readonly start: Date
+  readonly durationMs: number
+  readonly track: Track
+  readonly cars: readonly Car[]
+}
+
+/** Running sum: [5, 1, 2] becomes [5, 6, 8]. */
+export function undelta(values: readonly number[]): Float64Array {
+  const out = new Float64Array(values.length)
+  let sum = 0
+  values.forEach((v, i) => {
+    sum += v
+    out[i] = sum
+  })
+  return out
+}
+
+/** Checks parsed JSON and turns it into a Race, or throws ReplayError. */
+export function parseRace(data: unknown): Race {
+  const result = raceSchema.safeParse(data)
+  if (!result.success) {
+    throw new ReplayError(`race file is not valid:\n${z.prettifyError(result.error)}`)
+  }
+  const race = result.data
+  return {
+    name: race.session.name,
+    location: race.session.location,
+    year: race.session.year,
+    start: new Date(race.start),
+    durationMs: race.duration_ms,
+    track: {
+      rotation: race.track.rotation,
+      bounds: race.track.bounds,
+      circuit: race.track.circuit,
+      pitLane: race.track.pit_lane,
+    },
+    cars: race.cars.map((car) => ({
+      number: car.number,
+      acronym: car.acronym,
+      name: car.name,
+      team: car.team,
+      colour: `#${car.colour}`,
+      ink: car.ink,
+      t: undelta(car.t),
+      x: undelta(car.x),
+      y: undelta(car.y),
+    })),
+  }
+}
+
+/** Downloads and checks a race file. `fetchFn` is swappable so tests need no network. */
+export async function loadRace(
+  url: string,
+  fetchFn: typeof fetch = fetch,
+  timeoutMs = 30_000,
+): Promise<Race> {
+  let response: Response
+  try {
+    response = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) })
+  } catch (e) {
+    throw new ReplayError(`could not download ${url}`, { cause: e })
+  }
+  if (!response.ok) {
+    throw new ReplayError(`could not download ${url}: HTTP ${String(response.status)}`)
+  }
+  let data: unknown
+  try {
+    data = await response.json()
+  } catch (e) {
+    throw new ReplayError(`${url} is not valid JSON`, { cause: e })
+  }
+  return parseRace(data)
+}

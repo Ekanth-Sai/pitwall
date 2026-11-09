@@ -157,6 +157,9 @@ flowchart LR
   - Features are never cut, only moved.
 - **Recalibrate after W3:** compare real hours to the estimates, and adjust P1 onwards if they're
   off by more than 25%.
+- **At each phase review**, also check the held-back dependencies: `pnpm view typescript-eslint
+  peerDependencies` (can TypeScript move?) and whether `.nvmrc` should move up, taking `@types/node`
+  with it ([design/frontend.md](design/frontend.md#decisions), decisions 1 and 12).
 - **Merging:** squash only (enforced in the repo settings); branches are deleted on merge.
 
 ## Velocity log

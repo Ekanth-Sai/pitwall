@@ -23,3 +23,11 @@ updates:
       groups:
         frontend-deps:
           patterns: ["*"]
+      ignore:
+        # typescript-eslint's peer range stops below TypeScript 6.1 (as of 8.72); revisit at each
+        # phase review (docs/design/frontend.md, decision 1)
+        - dependency-name: "typescript"
+          update-types: ["version-update:semver-major", "version-update:semver-minor"]
+        # the types follow the oldest Node we support (.nvmrc, 22): decision 12
+        - dependency-name: "@types/node"
+          update-types: ["version-update:semver-major"]

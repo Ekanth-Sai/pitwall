@@ -18,10 +18,11 @@ flowchart LR
 | Layer | Catches | Runs |
 |---|---|---|
 | ruff `S` (bandit) | Insecure patterns in our code | pre-commit + CI |
-| CodeQL (default setup) | Deeper flaws, e.g. untrusted input reaching a dangerous call across functions; scans Python + Actions | every PR + push to main |
+| CodeQL (default setup) | Deeper flaws, e.g. untrusted input reaching a dangerous call across functions; scans Python, Actions and TypeScript | every PR + push to main |
 | pip-audit | Known CVEs in locked deps (incl. dev tools) | every PR + weekly |
 | Dependabot malware alerts | Known-malicious packages (e.g. typosquats) | continuously |
-| Dependabot | Outdated Python deps and GitHub Actions | weekly PRs |
+| `pnpm audit --prod` | Known CVEs in the npm packages that ship to the browser | every PR |
+| Dependabot | Outdated Python deps, npm deps (7-day cooldown) and GitHub Actions. TypeScript's minor/major and `@types/node`'s major are ignored, security updates included: [frontend.md](frontend.md#decisions), decisions 1 and 12 | weekly PRs |
 | Secret scanning + push protection | Leaked tokens | every push |
 | `permissions: contents: read` | CI token can't write to the repo | always |
 

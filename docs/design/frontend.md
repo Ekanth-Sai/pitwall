@@ -72,7 +72,17 @@ Every gate was checked to fail on purpose with a planted file:
 1. **TypeScript 6.0, not 7.** TypeScript 7 (the compiler rewritten in Go) is out, and the Vite
    template now defaults to it. typescript-eslint 8.72 only supports TypeScript below 6.1, though,
    and type-aware lint rules are worth more here than a faster compiler: the project is small, and
-   a cold `tsc` run takes about 3 s. Move to 7 when typescript-eslint supports it; Dependabot will offer it.
+   a cold `tsc` run takes about 3 s. Dependabot ignores TypeScript's minor and major releases
+   (its first grouped PR, #151, bumped to 7 and failed CI), so the move is made by hand. Patch
+   releases still come through.
+   - **When to move:** every phase review runs `pnpm view typescript-eslint peerDependencies`. Once
+     the `typescript` range includes a newer version, bump it on a branch of its own.
+   - **Cost:** the ignore rule also blocks Dependabot *security* updates for those versions. The risk
+     is low because TypeScript is a build tool and never ships to the browser. If an advisory ever
+     names it, the phase-review check comes early.
+   - **Not chosen:** a separate Dependabot group for the TypeScript toolchain. It would open a red PR
+     every week until typescript-eslint caught up, and hold back typescript-eslint's own fixes in
+     the meantime.
 2. **ESLint, not oxlint.** The template now ships oxlint, a fast linter written in Rust. ESLint
    with typescript-eslint's `strictTypeChecked` preset has the rules that catch real bugs, such as a
    promise nobody awaits or a value typed `any` leaking through. Prettier owns formatting, and
@@ -112,6 +122,10 @@ Every gate was checked to fail on purpose with a planted file:
     frontend gate is `make web-check`, and both run in CI.
 11. **ESLint also checks `.js` files** (`js.configs.recommended`, Node globals), so the config file
     itself and any later script get linted too.
+12. **`@types/node` stays on Node 22's types.** `engines` allows Node 22 and 24+, so the types
+    follow the oldest of them: code that type-checks then runs on every supported Node, and an API
+    that only Node 24 has is a type error. Dependabot ignores their major releases. The major moves
+    by hand, in the same PR that raises `.nvmrc` and the `engines` floor.
 
 ## Measured (P1.2, empty app)
 

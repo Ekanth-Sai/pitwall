@@ -34,11 +34,18 @@ frontend/
 ├── public/               copied as-is into the build: favicon, races/monza-2024.json (P1.1)
 └── src/
     ├── main.tsx          entry point: mounts App into index.html's #root
-    ├── App.tsx           the top component
-    ├── App.test.tsx      its tests
+    ├── App.tsx           the top component: downloads the race, then shows it
+    ├── RaceView.tsx      the track with every car on it
     ├── index.css         page-wide styles
+    ├── race/load.ts      downloads and checks the race file, decodes the deltas
+    ├── track/
+    │   ├── projection.ts world coordinates (decimetres, y up) to SVG coordinates
+    │   ├── TrackMap.tsx  the circuit and the dashed pit lane
+    │   └── CarDot.tsx    one car: team colour, number in the ink colour
     └── test/setup.ts     runs before every test file
 ```
+
+Tests sit next to the code they test, as `*.test.ts` or `*.test.tsx`.
 
 ## Scripts
 
@@ -126,6 +133,67 @@ Every gate was checked to fail on purpose with a planted file:
     follow the oldest of them: code that type-checks then runs on every supported Node, and an API
     that only Node 24 has is a type error. Dependabot ignores their major releases. The major moves
     by hand, in the same PR that raises `.nvmrc` and the `engines` floor.
+
+## Drawing the race (P1.3)
+
+The page downloads `races/monza-2024.json` (the file `make export` writes,
+[replay.md](replay.md)), checks it, and draws every car at its first sample. P1.4 makes them
+move.
+
+```mermaid
+flowchart LR
+    A["monza-2024.json<br/>4.08 MB"] --> B["loadRace<br/>fetch, 30 s timeout"]
+    B --> C["parseRace<br/>zod check, undo the deltas"]
+    C --> D["Race<br/>typed, Float64Array per car"]
+    D --> E["RaceView"]
+    E --> F["TrackMap<br/>circuit, pit lane"]
+    E --> G["CarDot x 20"]
+```
+
+`App` is in exactly one of three states and shows only that one:
+
+```mermaid
+flowchart LR
+    L["loading<br/>Loading the race…"] -->|"race checked"| R["ready<br/>RaceView"]
+    L -->|"download or check failed"| E["error<br/>the reason, as an alert"]
+```
+
+1. **The race file is checked when it arrives.** It's input from outside the code, like
+   `TrackOutline.from_json` on the Python side. zod checks every field: the format version, hex
+   colours, integer columns of equal length, strictly increasing times. Anything wrong becomes a
+   `ReplayError` with zod's description, and the page shows it instead of drawing something
+   broken. Past that point the rest of the app trusts the types.
+2. **One projection for everything.** `Projection` rotates world points counter-clockwise by the
+   export's `rotation`, then flips y, because SVG's y axis points down. The viewBox comes from the
+   export's bounds plus a 400 dm margin, so dots at the edges fit. Only positions are projected,
+   never the dot itself, so the numbers stay upright.
+3. **Sizes are in world units.** The SVG scales the whole track to the window, and a dot (radius
+   220 dm, about 44 m across) scales with it. Lines are the exception: they use
+   `vector-effect: non-scaling-stroke`, so the circuit is the same 6 px wide at any size.
+4. **The loader is passed in.** `App` takes an optional `load` function, which defaults to
+   downloading Monza; `loadRace` takes `fetch` the same way. Tests swap in their own and need no
+   network, like the swappable transports on the Python side.
+5. **A late download is ignored.** The effect that downloads the race clears a flag in its
+   cleanup. If `load` changes, or the page goes away, before the download finishes, the old result
+   is dropped instead of replacing newer state. A test proves it: it fails when the flag is
+   removed.
+6. **A car with no samples is left out.** The export never writes one and `parseRace` rejects it,
+   but the `Car` type allows empty columns, so `RaceView` checks instead of assuming.
+7. **Dots overlap.** At the start, 20 cars sit within about 200 m on the grid, so their numbers
+   cover each other. Spreading labels apart is P5.7 (label collisions).
+
+### Measured (Monza)
+
+| | |
+|---|---|
+| `JSON.parse` of the race file | about 40 ms |
+| zod check and undoing the deltas | 310 to 400 ms (Node 22 on this laptop; Chrome runs the same V8 engine) |
+| Bundle | 312.5 kB JS (95.3 kB gzipped); zod adds 92.6 kB (26.5 kB gzipped) |
+| `pnpm check` | 42 tests, 100% coverage |
+
+The check is the slow part, because zod looks at each of about a million integers one at a time.
+It's a one-off cost at load, not per frame. P1.7 decides whether a faster check (for example one
+plain loop per column) is worth it.
 
 ## Measured (P1.2, empty app)
 

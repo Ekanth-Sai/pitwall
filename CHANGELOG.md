@@ -12,6 +12,10 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
   with readable ink, and the track outline. `make export` writes Monza 2024 to
   `frontend/public/races/monza-2024.json`: 20 cars, 353,980 samples, 4.08 MB (1.27 MB gzipped).
   Format: [docs/design/replay.md](docs/design/replay.md).
+- The browser app draws Monza 2024: the circuit, the dashed pit lane, and all 20 cars as
+  team-coloured dots with their numbers, at their first sample. The race file is checked when it
+  loads (zod), and a missing or broken file shows an error instead of a broken page. See
+  [docs/design/frontend.md](docs/design/frontend.md#drawing-the-race-p13).
 - `PacedTransport` (requests spaced apart) and `pitwall.files.write_atomic`, shared by the cache
   and the export.
 - `frontend/`: the browser app's scaffold (Vite, React 19, TypeScript 6 in strict mode,

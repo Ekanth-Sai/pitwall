@@ -159,10 +159,14 @@ flowchart LR
 ```
 
 1. **The race file is checked when it arrives.** It's input from outside the code, like
-   `TrackOutline.from_json` on the Python side. zod checks every field: the format version, hex
-   colours, integer columns of equal length, strictly increasing times. Anything wrong becomes a
-   `ReplayError` with zod's description, and the page shows it instead of drawing something
-   broken. Past that point the rest of the app trusts the types.
+   `TrackOutline.from_json` on the Python side. zod checks every field: the format version, a
+   start time with exactly 3 fraction digits, bounds with min below max, hex colours, unique car
+   numbers, integer columns of equal length, and times that start at 0 or later, strictly
+   increase and end within `duration_ms`. Anything wrong becomes a `ReplayError` with zod's
+   description of the first 5 problems and a count of the rest (a bad export could have a
+   million), and the page shows it instead of drawing something broken. A timeout says "timed
+   out", even when it hits while the body is still arriving. Past that point the rest of the app
+   trusts the types.
 2. **One projection for everything.** `Projection` rotates world points counter-clockwise by the
    export's `rotation`, then flips y, because SVG's y axis points down. The viewBox comes from the
    export's bounds plus a 400 dm margin, so dots at the edges fit. Only positions are projected,
@@ -181,6 +185,14 @@ flowchart LR
    but the `Car` type allows empty columns, so `RaceView` checks instead of assuming.
 7. **Dots overlap.** At the start, 20 cars sit within about 200 m on the grid, so their numbers
    cover each other. Spreading labels apart is P5.7 (label collisions).
+8. **Left for later** (from the P1.3 code review):
+   - *P1.7:* the cleanup ignores a late download but doesn't cancel it, so it still finishes and
+     runs the check. That only costs anything when `load` changes mid-download, which doesn't
+     happen yet, and in development, where `StrictMode` runs the effect twice. Cancelling means
+     passing an `AbortController`'s signal down to `fetch`, combined with the timeout.
+   - *P1.7:* the check itself (below).
+   - *P4.6 (scrubber and race choice):* when `load` changes, the old race stays on screen until
+     the new one arrives. It should go back to "loading" once there's a way to pick another race.
 
 ### Measured (Monza)
 

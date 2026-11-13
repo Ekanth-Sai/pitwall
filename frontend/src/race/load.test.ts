@@ -79,6 +79,10 @@ describe('parseRace', () => {
     ['not an object', () => 'race'],
     ['another format', (r: ReturnType<typeof raceJson>) => ({ ...r, format: 2 })],
     ['a bad start time', (r: ReturnType<typeof raceJson>) => ({ ...r, start: 'Sunday' })],
+    [
+      'a start time without exactly 3 fraction digits',
+      (r: ReturnType<typeof raceJson>) => ({ ...r, start: '2024-09-01T13:03:34.412123+00:00' }),
+    ],
     ['no cars', (r: ReturnType<typeof raceJson>) => ({ ...r, cars: [] })],
   ])('rejects %s', (_label, change) => {
     expect(() => parseRace(change(raceJson()))).toThrow(ReplayError)
@@ -96,7 +100,41 @@ describe('parseRace', () => {
 
   it('rejects times that do not increase', () => {
     const race = raceJson([carJson({ t: [56, 0, 240] })])
-    expect(() => parseRace(race)).toThrow('times must strictly increase')
+    expect(() => parseRace(race)).toThrow('times must start at 0 or later and strictly increase')
+  })
+
+  it('rejects a time before the start', () => {
+    const race = raceJson([carJson({ t: [-5, 200, 240] })])
+    expect(() => parseRace(race)).toThrow('times must start at 0 or later and strictly increase')
+  })
+
+  it('rejects a time after the end', () => {
+    const race = raceJson([carJson({ t: [56, 200, 745] })])
+    expect(() => parseRace(race)).toThrow('every sample must be within duration_ms')
+  })
+
+  it('rejects two cars with the same number', () => {
+    const race = raceJson([carJson(), carJson()])
+    expect(() => parseRace(race)).toThrow('car numbers must be unique')
+  })
+
+  it('rejects bounds with min above max', () => {
+    const race = raceJson()
+    race.track.bounds = [10, 0, 0, 10]
+    expect(() => parseRace(race)).toThrow('min below max')
+  })
+
+  it('keeps the message short when many values are wrong', () => {
+    const many = Array.from({ length: 1000 }, () => 1.5)
+    const race = raceJson([carJson({ t: many.map(() => 1), x: many, y: many })])
+    let message = ''
+    try {
+      parseRace(race)
+    } catch (e) {
+      message = (e as Error).message
+    }
+    expect(message).toContain('(and 1995 more)')
+    expect(message.length).toBeLessThan(2000)
   })
 
   it('rejects positions that are not integers', () => {
@@ -115,7 +153,18 @@ describe('loadRace', () => {
 
   it('reports a network failure', async () => {
     const fetchFn = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('offline'))
-    await expect(loadRace('/races/test.json', fetchFn)).rejects.toThrow('could not download')
+    await expect(loadRace('/races/test.json', fetchFn)).rejects.toThrow(
+      'could not download /races/test.json: TypeError: offline',
+    )
+  })
+
+  it('says it timed out, not that the JSON is bad, when reading the body takes too long', async () => {
+    const slow = {
+      ok: true,
+      json: () => Promise.reject(new DOMException('signal timed out', 'TimeoutError')),
+    } as unknown as Response
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(slow)
+    await expect(loadRace('/races/test.json', fetchFn, 10)).rejects.toThrow('timed out after 10 ms')
   })
 
   it('reports an HTTP error', async () => {
@@ -136,6 +185,6 @@ describe('loadRace', () => {
         })
       })
     })
-    await expect(loadRace('/races/test.json', fetchFn, 10)).rejects.toThrow(ReplayError)
+    await expect(loadRace('/races/test.json', fetchFn, 10)).rejects.toThrow('timed out after 10 ms')
   })
 })

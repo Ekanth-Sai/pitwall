@@ -3,7 +3,8 @@
 Dates for every phase and step, the rules for keeping them, and a log of how the plan
 holds up. The board is the source of truth for status:
 [pitwall project](https://github.com/users/Ekanth-Sai/projects/1). Milestones carry the phase
-due dates.
+due dates. Each phase has a parent issue (#164 to #175) whose sub-issues are its steps, in the
+order they are done; a step split into parts (P0.7, P1.3) has the parts as its own sub-issues.
 
 ## How the dates were set
 
@@ -75,7 +76,7 @@ schedule was set.
 | W3 | Nov 16–22 | 1.1, 1.2 |
 | W4 | Nov 23–29 | 1.3, 1.4 |
 | W5 | Nov 30 – Dec 6 | 1.5, 1.6, 1.7 |
-| W6 | Dec 7–13 | 1.10 → 1.9 → 1.8, 1.R |
+| W6 | Dec 7–13 | 1.8 → 1.9 → 1.10, 1.R |
 | W7 | Dec 14–20 | 2.1, 2.2 |
 | W8–9 | Dec 21 – Jan 3 (half) | 2.3, begin 2.4 |
 | W10 | Jan 4–10 2027 | 2.4, 2.5 |
@@ -87,9 +88,9 @@ schedule was set.
 | W21 | Mar 22–28 | 3.7, 3.8, 3.9, 3.R |
 | W22 | Mar 29 – Apr 4 | 4.1, 4.2 |
 | W23 | Apr 5–11 | 4.3 |
-| W24 | Apr 12–18 | 4.4, 4.8 |
-| W25 | Apr 19–25 | 4.5, 4.7 |
-| W26 | Apr 26 – May 2 | 4.6 |
+| W24 | Apr 12–18 | 4.4, 4.5 |
+| W25 | Apr 19–25 | 4.6, 4.7 |
+| W26 | Apr 26 – May 2 | 4.8 |
 | W27 | May 3–9 | 4.9, 4.10, 4.R |
 | W28 | May 10–16 | *buffer* |
 | W29–W32 | May 17 – Jun 13 | 5.1 to 5.4, one a sprint |

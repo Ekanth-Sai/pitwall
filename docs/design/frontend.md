@@ -201,7 +201,7 @@ flowchart LR
 | `JSON.parse` of the race file | about 40 ms |
 | zod check and undoing the deltas | 310 to 400 ms (Node 22 on this laptop; Chrome runs the same V8 engine) |
 | Bundle | 312.5 kB JS (95.3 kB gzipped); zod adds 92.6 kB (26.5 kB gzipped) |
-| `pnpm check` | 42 tests, 100% coverage |
+| `pnpm check` | 49 tests, 100% coverage |
 
 The check is the slow part, because zod looks at each of about a million integers one at a time.
 It's a one-off cost at load, not per frame. P1.7 decides whether a faster check (for example one

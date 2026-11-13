@@ -191,7 +191,7 @@ flowchart LR
      happen yet, and in development, where `StrictMode` runs the effect twice. Cancelling means
      passing an `AbortController`'s signal down to `fetch`, combined with the timeout.
    - *P1.7:* the check itself (below).
-   - *P4.6 (scrubber and race choice):* when `load` changes, the old race stays on screen until
+   - *P4.8 (scrubber and race choice):* when `load` changes, the old race stays on screen until
      the new one arrives. It should go back to "loading" once there's a way to pick another race.
 
 ### Measured (Monza)

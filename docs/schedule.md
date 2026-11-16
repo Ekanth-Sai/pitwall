@@ -171,7 +171,8 @@ Planned is the sum of the sprint's estimates. Actual is filled in at the Sunday 
 |---|---|---|---|---|
 | W0 (Oct 26 – Nov 1) | – | ~30 h (P0.1 to P0.7d) | P0.1–P0.6, P0.7a–d | before the schedule; used to calibrate the estimates |
 | W1 (Nov 2–8) | 11 h | ~15 h (rough) | P0.7e–g, P0.8, P0.9, P0.10 (v0.1.0), P1.1, P1.2: 36 h of estimates | goal met on day 1; pulled in all of W2 and W3; Phase 0 shipped 11 days early |
-| W2 (Nov 9–15) | 12 h | | | W2's own steps already done; pulled in P1.3 (6 h) and P1.4 (6 h) from W4 |
+| W2 (Nov 9–15) | 12 h | 7.3 h (logged) | P1.3 (#177); P1.4a committed, P1.4b started | W2's own steps already done; pulled in P1.3 (6 h) and P1.4 (6 h) from W4; review held a day late (Nov 16) |
+| W3 (Nov 16–22) | 13 h | | | W3's own steps (P1.1, P1.2) already done; finish P1.4 (~4 h left), pull in P1.5 (4 h) and P1.6 (5 h) from W5 |
 
 ### Retros
 
@@ -187,3 +188,15 @@ Planned is the sum of the sprint's estimates. Actual is filled in at the Sunday 
 - **Calibration, first data point:** about 36 h of estimates took about 15 h, so estimates may be
   roughly 2× too high. The hours are a rough recollection, so from W2 they are logged per session;
   the W3 recalibration rule decides whether later dates move.
+
+**W2** (Nov 16, a day late)
+- **Keep:** drafting in scratch and mutation-testing the new code, which found a weak test (a `<=`
+  mutant in the cursor check survived until the gap test was strengthened); splitting a step into
+  sub-issues with a commit per part.
+- **Stop:** letting the Sunday review slip; this one went unnoticed until Monday.
+- **Try:** a Sunday-evening phone reminder for the review; keep logging time per session.
+- **Velocity:** 7.3 h of 12 h planned (61%), the first sprint under 80%. The re-forecast rule needs
+  two in a row, and P1.4 isn't due until Nov 29, so dates stay.
+- **Calibration, second data point:** P1.3 took about 5.3 h against its 6 h estimate. The frontend
+  estimates hold; W1's "2× too high" came from Python and configuration that were already familiar.
+  At the W3 recalibration, leave the dates as they are unless W3 says otherwise.

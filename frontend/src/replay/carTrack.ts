@@ -61,7 +61,7 @@ export class CarTrack {
   /** The index i with t[i] <= ms < t[i + 1]. `ms` is within the samples and before the last one. */
   private segmentAt(ms: number, last: number): number {
     // the usual case while playing: the same pair as the last frame, or the next one
-    for (const i of [this.cursor, this.cursor + 1]) {
+    for (let i = this.cursor; i <= this.cursor + 1; i++) {
       if (i < last && sampleAt(this.t, i) <= ms && ms < sampleAt(this.t, i + 1)) {
         this.cursor = i
         return i

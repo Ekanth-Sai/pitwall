@@ -35,6 +35,9 @@ export function RaceView({ race, now = wallTime }: RaceViewProps) {
 
   useEffect(() => {
     clock.play()
+    return () => {
+      clock.pause()
+    }
   }, [clock])
 
   useAnimationFrame(() => {

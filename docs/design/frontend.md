@@ -274,7 +274,8 @@ stateDiagram-v2
    - `Projection` and the `CarTrack`s are kept with `useMemo`. Losing one would only cost a
      cursor, so a cache is enough.
    - The clock is kept with a lazy `useState`, built once for the view's whole life. Rebuilding it
-     would restart the race.
+     would restart the race. An effect starts it when the view appears and pauses it when the view
+     goes away.
    - The race time is state. `setTime` each frame is what re-renders, and React skips the render
      when the value hasn't changed, as after the clock stops at the end.
 5. **The frame loop.** `useAnimationFrame` asks for a frame, and each frame asks for the next.
@@ -290,8 +291,21 @@ stateDiagram-v2
    P1.5. No Monza car has a sample at exactly 0 (the first ones are 0 to 56 ms in), so the very
    first frame is empty for under a frame's time.
 8. **Re-rendering every frame is a choice to check later.** 20 dots re-rendered by React 60 times
-   a second is the simple way. P1.7 measures it, and moves the positions to direct DOM updates
-   through refs if it doesn't fit in 16.7 ms.
+   a second is the simple way. `TrackMap` re-renders with them, because the cars are its children,
+   so it keeps its circuit and pit-lane path strings with `useMemo`: the track never changes, and
+   projecting its 500 points every frame would be wasted. P1.7 measures the rest, and moves the
+   positions to direct DOM updates through refs if it doesn't fit in 16.7 ms.
+9. **Left for later** (from the P1.4 code review):
+   - *P1.5 (controls):* the frame loop keeps running after the clock stops at the end, and will
+     while paused. React skips the re-render when the time hasn't changed, so each frame only
+     costs one `clock.time()` call. Once pause exists, `useAnimationFrame` gets an `active` flag
+     and the loop stops while the clock isn't playing.
+   - *P4.8 (scrubber and race choice):* the clock is built once from the first race's
+     `durationMs`. A different race passed to the same `RaceView` would keep the old clock. With
+     only one race that can't happen; once a race can be picked, `App` gives `RaceView` a `key`
+     per race, so each race gets a new view and a new clock.
+   - *Not changed:* reading samples through `sampleAt` (a checked read) instead of `t[i]!`. The
+     lint rules forbid `!`, and all 20 cars still take about 2 µs a frame.
 
 ### Measured (Monza)
 

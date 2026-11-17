@@ -35,14 +35,20 @@ frontend/
 └── src/
     ├── main.tsx          entry point: mounts App into index.html's #root
     ├── App.tsx           the top component: downloads the race, then shows it
-    ├── RaceView.tsx      the track with every car on it
+    ├── RaceView.tsx      the track with every car on it, playing
     ├── index.css         page-wide styles
     ├── race/load.ts      downloads and checks the race file, decodes the deltas
+    ├── replay/
+    │   ├── clock.ts      PlaybackClock: race time from wall time, speed, play/pause/seek
+    │   ├── carTrack.ts   CarTrack: one car's position at any race time
+    │   └── useAnimationFrame.ts  a hook that calls back once per screen refresh
     ├── track/
     │   ├── projection.ts world coordinates (decimetres, y up) to SVG coordinates
     │   ├── TrackMap.tsx  the circuit and the dashed pit lane
     │   └── CarDot.tsx    one car: team colour, number in the ink colour
-    └── test/setup.ts     runs before every test file
+    └── test/
+        ├── setup.ts      runs before every test file
+        └── frames.ts     FakeFrames: screen refreshes a test steps by hand
 ```
 
 Tests sit next to the code they test, as `*.test.ts` or `*.test.tsx`.
@@ -206,6 +212,99 @@ flowchart LR
 The check is the slow part, because zod looks at each of about a million integers one at a time.
 It's a one-off cost at load, not per frame. P1.7 decides whether a faster check (for example one
 plain loop per column) is worth it.
+
+## Playing the race (P1.4)
+
+The cars now move. Three pieces, each tested on its own:
+
+- **`PlaybackClock`** turns wall time into race time.
+- **`CarTrack`** gives one car's position at any race time.
+- **`useAnimationFrame`** runs a callback once per screen refresh.
+
+Every frame goes through the same steps:
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant H as useAnimationFrame
+    participant V as RaceView
+    participant C as PlaybackClock
+    participant T as CarTrack (one per car)
+    B->>H: requestAnimationFrame callback
+    H->>V: onFrame()
+    V->>C: time()
+    C-->>V: race time in ms
+    V->>V: setTime, which re-renders
+    V->>T: positionAt(time)
+    T-->>V: [x, y] or null
+    V->>V: project, then draw a CarDot
+    H->>B: requestAnimationFrame(next)
+```
+
+The clock has two states. Every change moves its anchor to now first, so race time never
+jumps:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Paused: created at 0
+    Paused --> Playing: play()
+    Playing --> Paused: pause()
+    Playing --> Paused: time() reaches the end
+    Paused --> Paused: seek(t), setSpeed(s)
+    Playing --> Playing: seek(t), setSpeed(s)
+```
+
+1. **Race time comes from one anchor.** The clock keeps "race time `anchorRace` at wall time
+   `anchorWall`", and works out race time = anchorRace + (now − anchorWall) × speed. Pausing,
+   seeking and changing speed first move the anchor to the current moment, so none of them makes
+   the cars jump. It stops at the end and pauses there; `play()` at the end starts again from 0.
+   Wall time is `performance.now()`, which, unlike `Date.now()`, never jumps when the system clock
+   is set. It's passed in, so tests move time by hand.
+2. **Finding a car's two samples.** `positionAt` binary-searches the car's times, O(log n), but
+   first tries the pair of samples it used last time and the next pair. While playing, the next
+   frame is almost always in one of those, so it's O(1) per frame; after a seek it falls back to
+   the search. Between the two samples, it interpolates in a straight line. A test checks it
+   against a brute-force scan over the whole Monza race, playing forwards and seeking around.
+3. **When a car isn't drawn.** Before its first sample, after its last, and between two samples
+   more than 5 s apart (`MAX_GAP_MS`): a gap that long means the car wasn't seen (garage, retired,
+   signal lost), and sliding it across in a straight line would be wrong. Exactly on a sample, the
+   car is always drawn, even next to a gap.
+4. **What survives between frames.** `RaceView` runs again on every frame, so anything built in
+   it would be rebuilt 60 times a second:
+   - `Projection` and the `CarTrack`s are kept with `useMemo`. Losing one would only cost a
+     cursor, so a cache is enough.
+   - The clock is kept with a lazy `useState`, built once for the view's whole life. Rebuilding it
+     would restart the race.
+   - The race time is state. `setTime` each frame is what re-renders, and React skips the render
+     when the value hasn't changed, as after the clock stops at the end.
+5. **The frame loop.** `useAnimationFrame` asks for a frame, and each frame asks for the next.
+   Each request gets a new id, so the loop keeps the latest one for its cleanup to cancel when the
+   view goes away. `useEffectEvent` (React 19.2) lets the loop always call the latest callback
+   without restarting. The browser pauses `requestAnimationFrame` in a hidden tab, so a
+   background tab costs nothing; the clock still runs on wall time, so the race has moved on when
+   the tab comes back.
+6. **Tests step frames by hand.** `setup.ts` replaces `requestAnimationFrame` with `FakeFrames`
+   before every test, so no frame runs unless a test calls `step`. Real frames would arrive at
+   random moments and make the `App` tests flaky.
+7. **It plays on its own, at 1×.** Playback starts when the view appears. Play/pause and 10× are
+   P1.5. No Monza car has a sample at exactly 0 (the first ones are 0 to 56 ms in), so the very
+   first frame is empty for under a frame's time.
+8. **Re-rendering every frame is a choice to check later.** 20 dots re-rendered by React 60 times
+   a second is the simple way. P1.7 measures it, and moves the positions to direct DOM updates
+   through refs if it doesn't fit in 16.7 ms.
+
+### Measured (Monza)
+
+| | |
+|---|---|
+| `positionAt` for all 20 cars, one frame at 1× | about 2 µs (275,000 frames over the 76.5 min window) |
+| The same at 10× (167 ms of race per frame) | about 4 µs |
+| A random seek, all 20 cars | about 11 µs (binary search) |
+| Bundle | 315.5 kB JS (96.3 kB gzipped), 3 kB more than P1.3 |
+| `pnpm check` | 86 tests, 100% coverage |
+
+The lookups are a tiny part of the 16.7 ms frame budget. Rendering is what P1.7 has to measure,
+in a real browser.
 
 ## Measured (P1.2, empty app)
 

@@ -16,6 +16,12 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
   team-coloured dots with their numbers, at their first sample. The race file is checked when it
   loads (zod), and a missing or broken file shows an error instead of a broken page. See
   [docs/design/frontend.md](docs/design/frontend.md#drawing-the-race-p13).
+- The race plays: the cars move around Monza in real time (1×) from the start, drawn every screen
+  refresh at their position interpolated in a straight line between samples. A car is hidden
+  before its first sample, after its last, and across gaps of more than 5 s. Finding a car's
+  position takes O(1) per frame while playing and a binary search after a seek: about 2 µs per
+  frame for all 20 cars. See
+  [docs/design/frontend.md](docs/design/frontend.md#playing-the-race-p14).
 - `PacedTransport` (requests spaced apart) and `pitwall.files.write_atomic`, shared by the cache
   and the export.
 - `frontend/`: the browser app's scaffold (Vite, React 19, TypeScript 6 in strict mode,

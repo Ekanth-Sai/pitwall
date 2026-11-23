@@ -1,4 +1,5 @@
-import { act, render } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import type { Car, Race } from './race/load'
@@ -100,5 +101,19 @@ describe('RaceView', () => {
     const { frames, view } = setup()
     view.unmount()
     expect(frames.pending).toBe(0)
+  })
+
+  it('holds the cars still while paused, and runs ten times faster at 10×', async () => {
+    const user = userEvent.setup()
+    const { frame, drawn } = setup()
+    frame(10)
+    await user.click(screen.getByRole('button', { name: 'Pause' }))
+    frame(500)
+    expect(drawn().get('1')).toBe(at(10, 0))
+    await user.click(screen.getByRole('button', { name: '10×' }))
+    await user.click(screen.getByRole('button', { name: 'Play' }))
+    frame(20)
+    expect(drawn().get('1')).toBe(at(210, 0))
+    expect(screen.getByText('0:00 / 0:01')).toBeInTheDocument()
   })
 })

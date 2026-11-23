@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
+import { Controls } from './controls/Controls'
 import type { Race } from './race/load'
 import { CarTrack } from './replay/carTrack'
-import { type Now, PlaybackClock } from './replay/clock'
-import { useAnimationFrame } from './replay/useAnimationFrame'
+import type { Now } from './replay/clock'
+import { usePlayback } from './replay/usePlayback'
 import { CarDot } from './track/CarDot'
 import { Projection } from './track/projection'
 import { TrackMap } from './track/TrackMap'
@@ -18,7 +19,7 @@ function wallTime(): number {
   return performance.now()
 }
 
-/** The race playing at 1× from the start, with every car where it is now. P1.5 adds controls. */
+/** The race playing from the start, with every car where it is now, and the controls above it. */
 export function RaceView({ race, now = wallTime }: RaceViewProps) {
   const { rotation, bounds } = race.track
   // built once per track, not on every frame
@@ -28,28 +29,22 @@ export function RaceView({ race, now = wallTime }: RaceViewProps) {
     () => race.cars.map((car) => ({ car, track: new CarTrack(car) })),
     [race.cars],
   )
-  // the same clock for as long as this view is on screen: a useState initialiser runs only once
-  const [clock] = useState(() => new PlaybackClock(race.durationMs, now))
-  // the race time drawn: set every frame, and each change re-renders the view
-  const [time, setTime] = useState(0)
-
-  useEffect(() => {
-    clock.play()
-    return () => {
-      clock.pause()
-    }
-  }, [clock])
-
-  useAnimationFrame(() => {
-    setTime(clock.time())
-  })
+  const playback = usePlayback(race.durationMs, now)
 
   return (
     <section>
       <h2>{`${race.location} ${String(race.year)} · ${race.name}`}</h2>
+      <Controls
+        playing={playback.playing}
+        speed={playback.speed}
+        time={playback.time}
+        durationMs={race.durationMs}
+        onPlayPause={playback.playPause}
+        onSpeed={playback.setSpeed}
+      />
       <TrackMap track={race.track} projection={projection}>
         {cars.map(({ car, track }) => {
-          const position = track.positionAt(time)
+          const position = track.positionAt(playback.time)
           if (position === null) {
             return null
           }

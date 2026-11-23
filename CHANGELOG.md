@@ -22,6 +22,10 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
   position takes O(1) per frame while playing and a binary search after a seek: about 2 µs per
   frame for all 20 cars. See
   [docs/design/frontend.md](docs/design/frontend.md#playing-the-race-p14).
+- Playback controls above the track: Play/Pause, 1× and 10×, and the race time out of the race's
+  length (`0:42 / 1:16:32`). The space bar plays and pauses. The controls are labelled for screen
+  readers, and the frame loop stops while the race is paused or over. See
+  [docs/design/frontend.md](docs/design/frontend.md#controlling-the-race-p15).
 - `PacedTransport` (requests spaced apart) and `pitwall.files.write_atomic`, shared by the cache
   and the export.
 - `frontend/`: the browser app's scaffold (Vite, React 19, TypeScript 6 in strict mode,

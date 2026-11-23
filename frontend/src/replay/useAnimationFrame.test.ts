@@ -52,4 +52,23 @@ describe('useAnimationFrame', () => {
     frames.step(33)
     expect(onFrame).toHaveBeenCalledTimes(1)
   })
+
+  it('runs only while active', () => {
+    const frames = installFakeFrames()
+    const onFrame = vi.fn()
+    const { rerender } = renderHook(
+      ({ active }) => {
+        useAnimationFrame(onFrame, active)
+      },
+      { initialProps: { active: false } },
+    )
+    expect(frames.pending).toBe(0)
+    rerender({ active: true })
+    act(() => {
+      frames.step(16)
+    })
+    rerender({ active: false })
+    expect(frames.pending).toBe(0)
+    expect(onFrame).toHaveBeenCalledTimes(1)
+  })
 })

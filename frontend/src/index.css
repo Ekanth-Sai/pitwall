@@ -9,6 +9,43 @@ body {
   padding: 16px;
 }
 
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.controls button {
+  /* wide enough for "Pause", so the row doesn't shift when the label changes */
+  min-width: 4.5em;
+  padding: 4px 12px;
+  border: 1px solid #888;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* the speed that's on: styled from the same attribute a screen reader announces */
+.controls button[aria-pressed='true'] {
+  background: CanvasText;
+  color: Canvas;
+}
+
+.controls button:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+
+/* every digit the same width, so the time doesn't wobble as it counts */
+.race-time {
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
 .track-map {
   display: block;
   width: 100%;

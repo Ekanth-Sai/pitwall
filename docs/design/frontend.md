@@ -17,6 +17,7 @@ with an 85% coverage gate, and a CI job.
 | ESLint + typescript-eslint | 10.14 + 8.72 | Lint rules, many of them using the types | ruff check |
 | Prettier | 3.9 | Formatting | ruff format |
 | Vitest + Testing Library | 5.0 + 16.3 | Tests in a simulated browser (jsdom), with v8 coverage | pytest + coverage |
+| user-event | 14.6 | Tests click and type the way a user does (P1.5) | (none) |
 
 ## Layout
 
@@ -35,13 +36,17 @@ frontend/
 └── src/
     ├── main.tsx          entry point: mounts App into index.html's #root
     ├── App.tsx           the top component: downloads the race, then shows it
-    ├── RaceView.tsx      the track with every car on it, playing
+    ├── RaceView.tsx      the controls and the track with every car on it, playing
     ├── index.css         page-wide styles
+    ├── controls/
+    │   ├── Controls.tsx  play/pause, 1×/10×, the space bar, race time
+    │   └── raceTime.ts   race time as m:ss or h:mm:ss
     ├── race/load.ts      downloads and checks the race file, decodes the deltas
     ├── replay/
     │   ├── clock.ts      PlaybackClock: race time from wall time, speed, play/pause/seek
     │   ├── carTrack.ts   CarTrack: one car's position at any race time
-    │   └── useAnimationFrame.ts  a hook that calls back once per screen refresh
+    │   ├── usePlayback.ts  a hook: one clock for the view, and what the controls can do to it
+    │   └── useAnimationFrame.ts  a hook that calls back once per screen refresh, while active
     ├── track/
     │   ├── projection.ts world coordinates (decimetres, y up) to SVG coordinates
     │   ├── TrackMap.tsx  the circuit and the dashed pit lane
@@ -296,10 +301,9 @@ stateDiagram-v2
    projecting its 500 points every frame would be wasted. P1.7 measures the rest, and moves the
    positions to direct DOM updates through refs if it doesn't fit in 16.7 ms.
 9. **Left for later** (from the P1.4 code review):
-   - *P1.5 (controls):* the frame loop keeps running after the clock stops at the end, and will
-     while paused. React skips the re-render when the time hasn't changed, so each frame only
-     costs one `clock.time()` call. Once pause exists, `useAnimationFrame` gets an `active` flag
-     and the loop stops while the clock isn't playing.
+   - *P1.5 (controls), done:* the frame loop kept running after the clock stopped at the end.
+     `useAnimationFrame` now has an `active` flag, and the loop runs only while the race plays
+     ([below](#controlling-the-race-p15)).
    - *P4.8 (scrubber and race choice):* the clock is built once from the first race's
      `durationMs`. A different race passed to the same `RaceView` would keep the old clock. With
      only one race that can't happen; once a race can be picked, `App` gives `RaceView` a `key`
@@ -319,6 +323,99 @@ stateDiagram-v2
 
 The lookups are a tiny part of the 16.7 ms frame budget. Rendering is what P1.7 has to measure,
 in a real browser.
+
+## Controlling the race (P1.5)
+
+A row above the track: Play/Pause, 1× and 10×, and the race time out of the race's length
+(`0:42 / 1:16:32`). The space bar plays and pauses too.
+
+The clock moved out of `RaceView` into a hook, `usePlayback`, which hands the controls what they
+can do. `Controls` itself holds no state: it shows what it's given and reports clicks.
+
+```mermaid
+flowchart LR
+    R["RaceView"] --> P["usePlayback<br/>the clock, time, playing, speed"]
+    P --> C["PlaybackClock"]
+    P --> F["useAnimationFrame<br/>active while playing"]
+    R --> K["Controls<br/>buttons, space bar, race time"]
+    K -->|"onPlayPause, onSpeed"| P
+    R --> T["TrackMap and CarDots<br/>at playback.time"]
+```
+
+A click goes through the clock first, then into React state:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant K as Controls
+    participant P as usePlayback
+    participant C as PlaybackClock
+    participant H as useAnimationFrame
+    U->>K: click Pause, or space
+    K->>P: onPlayPause()
+    P->>C: pause()
+    P->>P: setTime(clock.time()), setPlaying(false)
+    P->>H: active = false
+    H->>H: cleanup cancels the next frame
+    U->>K: click Play
+    K->>P: onPlayPause()
+    P->>C: play()
+    P->>P: setPlaying(true)
+    P->>H: active = true
+    H->>H: the loop starts again
+```
+
+1. **The clock holds the truth; React state copies it.** `PlaybackClock` is plain TypeScript, and
+   React can't see it change. So `usePlayback` copies `time`, `playing` and `speed` into state,
+   because a state change is what makes React draw again. Every action changes the clock first
+   and then copies from it, so the two never disagree. The functions it returns are typed as
+   arrow-function properties, not methods: they're passed around on their own as click handlers,
+   and the `unbound-method` lint rule only trusts that for functions that don't use `this`.
+2. **The frame loop runs only while playing.** `useAnimationFrame(onFrame, active)` has `active`
+   in its effect's dependencies. When it turns false, React runs the cleanup, which cancels the
+   pending frame, and the new run starts nothing. A paused race asks for no frames at all. The
+   clock pauses itself at the end of the race, so each frame also copies `clock.playing`, and the
+   loop stops there too. Play at the end starts again from 0 (the P1.4 rule), and the time is
+   copied at once, so the display goes back to 0:00 without waiting for a frame.
+3. **The space bar.** One `keydown` listener on `window`, so space works wherever the focus is.
+   It's added once: `useEffectEvent` gives it the latest `onPlayPause` without adding it again
+   every render. It skips:
+   - other keys, and a held-down space (`event.repeat`), which would toggle many times a second;
+   - space on a focused button, because the browser already clicks that button on space, and
+     toggling as well would undo the click.
+
+   Otherwise it calls `preventDefault()`, because space also scrolls the page down.
+4. **Accessibility.**
+   - The row is `role="group"` named "Playback", so a screen reader announces the buttons as a set.
+   - The speed buttons carry `aria-pressed`, so "1×, pressed" is read out. The style for the speed
+     that's on comes from the same attribute (`button[aria-pressed='true']`), so what's seen and
+     what's heard can't drift apart.
+   - The race time is a plain `<span>`, not an `<output>`. `<output>` is a live region, and a
+     screen reader would read the time out every second.
+   - The Play/Pause label says what a click will do, the usual pattern for a toggle.
+5. **Race time.** `formatRaceTime` rounds down to the second, as timing screens do: `m:ss` under
+   an hour, `h:mm:ss` from one. A negative, `NaN` or infinite time is a bug upstream, so it throws
+   a `RangeError` instead of showing nonsense. The digits use `tabular-nums`, so the time doesn't
+   wobble as it counts, and the buttons have a minimum width, so the row doesn't shift when Play
+   becomes Pause.
+6. **Testing like a user.** The `Controls` tests use user-event, which clicks and presses keys the
+   way a browser does: focus moves, and space on a focused button clicks it. Two checks need
+   `fireEvent` instead, because it returns whether the event was cancelled: that space doesn't
+   scroll the page, and that space on a focused button is left alone. Mutation testing found both
+   were untested before those two were written. One `RaceView` test goes through the real
+   buttons: pause holds the cars still, and 10× moves them 200 ms of race in 20 ms.
+7. **Left for later:**
+   - *P4.8 (scrubber):* a seek bar will be an `<input type="range">`, which uses the arrow keys,
+     not space; the space check stays as it is unless the scrubber needs it.
+   - *P5.9 (mobile and accessibility):* keyboard shortcuts for the speeds, and checking the row
+     with a real screen reader.
+
+### Measured (Monza)
+
+| | |
+|---|---|
+| Bundle | 317.0 kB JS (96.9 kB gzipped), 1.5 kB more than P1.4; CSS 1.0 kB |
+| `pnpm check` | 113 tests, 100% coverage; mutation testing caught all 13 mutants in the new code |
 
 ## Measured (P1.2, empty app)
 

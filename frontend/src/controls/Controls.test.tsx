@@ -22,7 +22,10 @@ function setup(playing = true, speed = 1) {
 
 describe('Controls', () => {
   it('offers Pause while playing and Play while paused', () => {
-    setup(true).view.unmount()
+    const { view } = setup(true)
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument()
+    view.unmount()
     setup(false)
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument()
@@ -72,9 +75,21 @@ describe('Controls', () => {
     expect(onPlayPause).not.toHaveBeenCalled()
   })
 
-  it('ignores other keys and a held-down space', async () => {
+  it('keeps the space bar working after a speed is clicked', async () => {
+    const { onPlayPause, onSpeed, user } = setup()
+    await user.click(screen.getByRole('button', { name: '10×' }))
+    expect(onSpeed).toHaveBeenCalledWith(10)
+    // the click didn't leave focus on 10×, so space plays and pauses instead of clicking 10× again
+    expect(document.activeElement).toBe(document.body)
+    await user.keyboard(' ')
+    expect(onPlayPause).toHaveBeenCalledTimes(1)
+    expect(onSpeed).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores other keys, a held-down space, and space with a modifier', async () => {
     const { onPlayPause, user } = setup()
     await user.keyboard('k{Enter}')
+    await user.keyboard('{Shift>} {/Shift}{Control>} {/Control}{Alt>} {/Alt}{Meta>} {/Meta}')
     // pressed, then two automatic repeats while held, then released
     await user.keyboard('[Space>3/]')
     expect(onPlayPause).toHaveBeenCalledTimes(1)

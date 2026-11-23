@@ -1,6 +1,16 @@
-import { useEffect, useEffectEvent } from 'react'
+import { type MouseEvent, useEffect, useEffectEvent } from 'react'
 
 import { formatRaceTime } from './raceTime'
+
+/**
+ * Clicking a speed with the mouse leaves focus where it was. Otherwise the speed button would
+ * keep focus, and the space bar would only click it again instead of playing and pausing.
+ * Keyboard users still reach it with Tab. Play/Pause doesn't need this: space on it clicks it,
+ * which toggles.
+ */
+function keepFocus(event: MouseEvent<HTMLButtonElement>) {
+  event.preventDefault()
+}
 
 /** The speeds offered: real time and ten times faster. */
 const SPEEDS = [1, 10] as const
@@ -25,8 +35,15 @@ export function Controls({
   onSpeed,
 }: ControlsProps) {
   const onKey = useEffectEvent((event: KeyboardEvent) => {
-    // space on a focused button already clicks it: toggling here as well would undo the click
-    if (event.key !== ' ' || event.repeat || event.target instanceof HTMLButtonElement) {
+    // Left alone: other keys, a held-down space, space with a modifier (Shift+Space scrolls up),
+    // and space on a focused button, which already clicks it: toggling as well would undo that.
+    const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
+    if (
+      event.key !== ' ' ||
+      event.repeat ||
+      modified ||
+      event.target instanceof HTMLButtonElement
+    ) {
       return
     }
     // without this, space also scrolls the page down
@@ -54,6 +71,7 @@ export function Controls({
           key={s}
           type="button"
           aria-pressed={s === speed}
+          onMouseDown={keepFocus}
           onClick={() => {
             onSpeed(s)
           }}

@@ -376,15 +376,25 @@ sequenceDiagram
    pending frame, and the new run starts nothing. A paused race asks for no frames at all. The
    clock pauses itself at the end of the race, so each frame also copies `clock.playing`, and the
    loop stops there too. Play at the end starts again from 0 (the P1.4 rule), and the time is
-   copied at once, so the display goes back to 0:00 without waiting for a frame.
+   copied at once, so the display goes back to 0:00 without waiting for a frame. A speed change
+   copies `time` and `playing` too: `setSpeed` reads the clock first, so if the race ran out
+   while no frame was drawn (a background tab), it's the speed change that stops the clock, and
+   the display has to show that at once.
 3. **The space bar.** One `keydown` listener on `window`, so space works wherever the focus is.
    It's added once: `useEffectEvent` gives it the latest `onPlayPause` without adding it again
    every render. It skips:
    - other keys, and a held-down space (`event.repeat`), which would toggle many times a second;
+   - space with Shift, Ctrl, Alt or Meta held: Shift+Space scrolls the page up, and the others
+     belong to the browser or the system;
    - space on a focused button, because the browser already clicks that button on space, and
      toggling as well would undo the click.
 
    Otherwise it calls `preventDefault()`, because space also scrolls the page down.
+
+   That last rule has a catch: a mouse click focuses the button it clicks. After clicking 10×,
+   space would click 10× again instead of pausing. So the speed buttons call `preventDefault()`
+   on `mousedown`, which stops the click from moving focus; keyboard users still reach them with
+   Tab. Play/Pause doesn't need it: space on a focused Play/Pause clicks it, which toggles anyway.
 4. **Accessibility.**
    - The row is `role="group"` named "Playback", so a screen reader announces the buttons as a set.
    - The speed buttons carry `aria-pressed`, so "1×, pressed" is read out. The style for the speed
@@ -403,19 +413,24 @@ sequenceDiagram
    `fireEvent` instead, because it returns whether the event was cancelled: that space doesn't
    scroll the page, and that space on a focused button is left alone. Mutation testing found both
    were untested before those two were written. One `RaceView` test goes through the real
-   buttons: pause holds the cars still, and 10× moves them 200 ms of race in 20 ms.
+   buttons: pause holds the cars still, and 10× moves them 200 ms of race in 20 ms. The
+   `usePlayback` tests move wall time with no frame (`wait`) to act out a background tab, and spy
+   on `PlaybackClock.prototype.pause` to check that unmounting stops the clock;
+   `vi.restoreAllMocks()` after each test puts the real method back.
 7. **Left for later:**
    - *P4.8 (scrubber):* a seek bar will be an `<input type="range">`, which uses the arrow keys,
-     not space; the space check stays as it is unless the scrubber needs it.
-   - *P5.9 (mobile and accessibility):* keyboard shortcuts for the speeds, and checking the row
-     with a real screen reader.
+     not space. The space check then also skips text inputs (`<input>`, `<textarea>`), which
+     need space for themselves; today the page has none.
+   - *P5.9 (mobile and accessibility):* keyboard shortcuts for the speeds, checking the row with
+     a real screen reader, and an error boundary for the whole app, so a bug that throws while
+     drawing (such as `formatRaceTime`'s `RangeError`) shows a message instead of a blank page.
 
 ### Measured (Monza)
 
 | | |
 |---|---|
-| Bundle | 317.0 kB JS (96.9 kB gzipped), 1.5 kB more than P1.4; CSS 1.0 kB |
-| `pnpm check` | 113 tests, 100% coverage; mutation testing caught all 13 mutants in the new code |
+| Bundle | 317.15 kB JS (96.95 kB gzipped), 1.6 kB more than P1.4; CSS 1.0 kB |
+| `pnpm check` | 115 tests, 100% coverage; mutation testing caught all 13 mutants in the new code, and all 11 in the review fixes |
 
 ## Measured (P1.2, empty app)
 

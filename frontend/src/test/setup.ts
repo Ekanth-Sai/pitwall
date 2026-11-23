@@ -10,8 +10,10 @@ beforeEach(() => {
   installFakeFrames()
 })
 
-// unmount whatever a test rendered, so the next test starts from an empty page
+// unmount whatever a test rendered, so the next test starts from an empty page; put back
+// globals and spied-on methods too
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })

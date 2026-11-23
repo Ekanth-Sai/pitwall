@@ -54,8 +54,11 @@ export function usePlayback(durationMs: number, now: Now): Playback {
       setPlaying(clock.playing)
     },
     setSpeed: (next) => {
+      // setSpeed reads the time first, so it can be what stops the clock at the end
       clock.setSpeed(next)
       setSpeedState(next)
+      setTime(clock.time())
+      setPlaying(clock.playing)
     },
   }
 }

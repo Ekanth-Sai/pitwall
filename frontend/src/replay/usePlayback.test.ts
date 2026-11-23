@@ -1,16 +1,21 @@
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { installFakeFrames } from '../test/frames'
+import { PlaybackClock } from './clock'
 import { usePlayback } from './usePlayback'
 
-// a 1000 ms race, with wall time and frames moved by hand; `frame(ms)` moves time on, then draws
+// a 1000 ms race, with wall time and frames moved by hand: `wait(ms)` moves time on with no frame
+// (as in a background tab), `frame(ms)` moves it on and then draws
 function setup() {
   const frames = installFakeFrames()
   let wall = 0
   const hook = renderHook(() => usePlayback(1000, () => wall))
-  function frame(ms: number) {
+  function wait(ms: number) {
     wall += ms
+  }
+  function frame(ms: number) {
+    wait(ms)
     act(() => {
       frames.step(wall)
     })
@@ -20,7 +25,7 @@ function setup() {
       action(hook.result.current)
     })
   }
-  return { frames, frame, press, hook }
+  return { frames, wait, frame, press, hook }
 }
 
 describe('usePlayback', () => {
@@ -79,9 +84,21 @@ describe('usePlayback', () => {
     expect(hook.result.current.time).toBe(10)
   })
 
+  it('shows at once when a speed change finds the race over', () => {
+    const { frames, wait, press, hook } = setup()
+    wait(5000)
+    press((p) => {
+      p.setSpeed(10)
+    })
+    expect(hook.result.current).toMatchObject({ time: 1000, playing: false, speed: 10 })
+    expect(frames.pending).toBe(0)
+  })
+
   it('pauses the clock when the component goes away', () => {
+    const pause = vi.spyOn(PlaybackClock.prototype, 'pause')
     const { frames, hook } = setup()
     hook.unmount()
+    expect(pause).toHaveBeenCalledTimes(1)
     expect(frames.pending).toBe(0)
   })
 })

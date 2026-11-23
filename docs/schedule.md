@@ -172,7 +172,8 @@ Planned is the sum of the sprint's estimates. Actual is filled in at the Sunday 
 | W0 (Oct 26 – Nov 1) | – | ~30 h (P0.1 to P0.7d) | P0.1–P0.6, P0.7a–d | before the schedule; used to calibrate the estimates |
 | W1 (Nov 2–8) | 11 h | ~15 h (rough) | P0.7e–g, P0.8, P0.9, P0.10 (v0.1.0), P1.1, P1.2: 36 h of estimates | goal met on day 1; pulled in all of W2 and W3; Phase 0 shipped 11 days early |
 | W2 (Nov 9–15) | 12 h | 7.3 h (logged) | P1.3 (#177); P1.4a committed, P1.4b started | W2's own steps already done; pulled in P1.3 (6 h) and P1.4 (6 h) from W4; review held a day late (Nov 16) |
-| W3 (Nov 16–22) | 13 h | | | W3's own steps (P1.1, P1.2) already done; finish P1.4 (~4 h left), pull in P1.5 (4 h) and P1.6 (5 h) from W5 |
+| W3 (Nov 16–22) | 13 h | 3.1 h (logged) | P1.4 (#182), closing #19 and #178–#180; P1.5a committed | every step due by W4 merged, about 2 weeks early; P1.6 not started; review held a day late (Nov 23) |
+| W4 (Nov 23–29) | 7 h (9 h with stretch) | | | W4's own steps (P1.3, P1.4) already done; finish P1.5 (~2 h), pull in P1.6 (5 h) from W5; stretch: P1.8 (4 h) from W6 |
 
 ### Retros
 
@@ -200,3 +201,20 @@ Planned is the sum of the sprint's estimates. Actual is filled in at the Sunday 
 - **Calibration, second data point:** P1.3 took about 5.3 h against its 6 h estimate. The frontend
   estimates hold; W1's "2× too high" came from Python and configuration that were already familiar.
   At the W3 recalibration, leave the dates as they are unless W3 says otherwise.
+
+**W3** (Nov 23, a day late)
+- **Keep:** reading `pnpm check` output to find typos: the tests named the `"` for `:` in the race
+  time at once. Sub-issues get the parent's Sprint, Start and Due, so they show on the Roadmap.
+- **Stop:** missing the Sunday review: the second in a row, so W2's phone reminder didn't stick.
+- **Try:** if Sunday is missed, the week's first session opens with the review, and Claude checks
+  for a due review when the timer starts. One read-through of typed files before `pnpm check`:
+  three of this sprint's four typos were in a test file, where a matching mistake hid one of them.
+- **Velocity:** 3.1 h of 13 h planned (24%), the second sprint in a row under 80%, so the
+  re-forecast rule fires. Re-forecasts happen only at a phase review, and every step due by W4 is
+  already merged, so dates stay. The risk is the pace: about 23 h of Phase 1 is left (P1.5 ~2,
+  P1.6 5, P1.7 4, P1.8 4, P1.9 3, P1.10 4, P1.R 1), which needs about 7.7 h a week to make Dec 13.
+  At W3's pace v0.2.0 lands in early January. W4 is planned at a realistic 7 h instead of 13 h.
+- **Recalibration (the after-W3 rule):** P1.3 took about 5.3 h and P1.4 about 3.6 h against 6 h
+  each: 8.9 h of 12 h, 26% under. Estimates stay: the log counts only typing and review time, not
+  Claude's drafting, and smaller estimates would make plans emptier, not truer. Checked again at the
+  Phase 1 review (Dec 13).

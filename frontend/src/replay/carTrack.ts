@@ -51,7 +51,7 @@ export class CarTrack {
     return this.interpolate(this.samples, ms, i, i + 1, before, after)
   }
 
-  /** Sample `next`, next to sample `i`, if there is one and it isn't across a gap; otherwise `i`. */
+  /** Sample `next`, beside sample `i`, if there is one and it isn't across a gap; otherwise `i`. */
   private beside(i: number, next: number): number {
     if (next < 0 || next >= this.t.length) {
       return i

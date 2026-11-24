@@ -26,6 +26,11 @@ phase, patches in between. How a release is made: [docs/design/dev-pipeline.md](
   length (`0:42 / 1:16:32`). The space bar plays and pauses. The controls are labelled for screen
   readers, and the frame loop stops while the race is paused or over. See
   [docs/design/frontend.md](docs/design/frontend.md#controlling-the-race-p15).
+- The cars take corners on a smooth curve instead of straight lines between samples:
+  non-uniform Catmull-Rom with the samples' times as knots, still passing through every sample.
+  About 5 µs a frame for all 20 cars. `pnpm figure` draws one car through a corner both ways
+  (`docs/figures/interpolation.svg`). See
+  [docs/design/frontend.md](docs/design/frontend.md#smoothing-the-corners-p16).
 - `PacedTransport` (requests spaced apart) and `pitwall.files.write_atomic`, shared by the cache
   and the export.
 - `frontend/`: the browser app's scaffold (Vite, React 19, TypeScript 6 in strict mode,

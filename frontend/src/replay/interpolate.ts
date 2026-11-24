@@ -83,7 +83,7 @@ function barryGoldman([p0, p1, p2, p3]: Four, [t0, t1, t2, t3]: Four, ms: number
   return blend(b1, t1, b2, t2, ms)
 }
 
-/** The value at time `ms` on the straight line through value `a` at time `ta` and `b` at time `tb`. */
+/** The value at time `ms` on the straight line through `a` at time `ta` and `b` at time `tb`. */
 function blend(a: number, ta: number, b: number, tb: number, ms: number): number {
   return a + ((b - a) * (ms - ta)) / (tb - ta)
 }

@@ -16,6 +16,7 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b",
     "test": "vitest run --coverage",
+    "figure": "node scripts/interpolation-figure.js",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {

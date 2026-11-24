@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { Controls } from './controls/Controls'
 import type { Race } from './race/load'
 import { CarTrack } from './replay/carTrack'
+import { catmullRom } from './replay/interpolate'
 import type { Now } from './replay/clock'
 import { usePlayback } from './replay/usePlayback'
 import { CarDot } from './track/CarDot'
@@ -26,7 +27,7 @@ export function RaceView({ race, now = wallTime }: RaceViewProps) {
   const projection = useMemo(() => new Projection(rotation, bounds), [rotation, bounds])
   // one CarTrack per car, kept across frames so each one's cursor is still there next frame
   const cars = useMemo(
-    () => race.cars.map((car) => ({ car, track: new CarTrack(car) })),
+    () => race.cars.map((car) => ({ car, track: new CarTrack(car, catmullRom) })),
     [race.cars],
   )
   const playback = usePlayback(race.durationMs, now)

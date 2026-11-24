@@ -462,11 +462,17 @@ flowchart LR
 
 1. **An `Interpolator` is a function type.** It takes the samples, the time and four sample
    numbers: the pair around the time (`from`, `to`) and one either side (`before`, `after`).
-   `CarTrack` decides which samples those are, since it knows about gaps: at a car's first or last
-   sample, or next to a gap over 5 s, there's nothing usable beside the pair, so it passes the
-   pair's own end again. The interpolators only do maths. They get sample numbers, not points, so
-   no objects are made per car per frame. `CarTrack` defaults to `linear`; `RaceView` passes
-   `catmullRom`.
+   `CarTrack` decides which samples those are, since it knows about the data: a neighbour is used
+   only if the car plausibly drove between it and the pair. Not at a car's first or last sample,
+   not across a gap over 5 s, and not if getting there would take more than 400 km/h
+   (`MAX_SPEED_DM_PER_MS`). Where there's none, it passes the pair's own end again. A pair that
+   doesn't move at all, or moves faster than 400 km/h itself (the data catching up after it
+   froze), gets no neighbours, so it's drawn straight. The interpolators only do maths, on sample
+   numbers rather than points. `CarTrack` defaults to `linear`; `RaceView` passes `catmullRom`.
+
+   The code review found why the plausibility checks are needed. Car 44's position froze for five
+   samples and then jumped 315 m in 300 ms; between two identical frozen samples, the curve bent
+   towards the jump and drew the parked car wandering 25 m away and back.
 2. **Catmull-Rom, Barry–Goldman form.** The curve between p1 and p2 also looks at p0 before and
    p3 after, which tell it which way the car was heading. Barry and Goldman's form builds it from
    straight-line blends only, each over the times of the points it mixes:
@@ -501,9 +507,9 @@ flowchart LR
    there. Times strictly increase (the loader checks), so no two knots are equal and nothing is
    divided by zero.
 5. **How much it changes.** At the midpoint between two samples, over the whole race (354,000
-   pairs), the curve and the straight line are 0.19 m apart at the median, 0.93 m at p90 and
-   2.5 m at p99. At 4 Hz the straight line was already close; the curve takes away the kink at
-   each sample, which is what the eye notices in a corner.
+   pairs), the curve and the straight line are 0.14 m apart at the median, 0.71 m at p90 and
+   1.6 m at p99, and 7.5 m at most. At 4 Hz the straight line was already close; the curve takes
+   away the kink at each sample, which is what the eye notices in a corner.
 6. **The figure is drawn by the app's own code.** `InterpolationFigure` is a React component
    rendered to an SVG string with `renderToStaticMarkup`, and its two lines come from two
    `CarTrack`s, one per interpolator. `pnpm figure` loads it through Vite (`runnerImport`, as Node
@@ -511,30 +517,38 @@ flowchart LR
    light and dark mode. It picks the corner itself: `sharpestTurn` finds the biggest change of
    direction over 3 samples either side, 20 minutes in. Its first pick was Leclerc standing in
    his pit box: at zero speed the position jitters, and that looked like a 90° turn. Both
-   stretches now have to cover at least 10 m.
+   stretches now have to cover at least 10 m, and none may span a gap. The drawing is scaled to
+   fit the curve as well as the samples, since the curve can bulge past them, and both lines run
+   all the way to the last sample.
 7. **Testing.** The interpolators are tested on known curves: through every sample, a straight
    line exact with or without samples beside it, about 10× closer to a circle than straight lines
    (10 dm against 97 dm at worst), and the textbook value. `CarTrack` is tested with a fake
    interpolator (`vi.fn`) that records which sample numbers it was handed, including next to a
-   gap and exactly at the limit. A `RaceView` test takes a car round a corner and checks it's on
-   the curve, not the straight line.
+   gap and exactly at the limit, at 400 km/h and at 401, standing still, and a jump between the
+   pair. A `RaceView` test takes a car round a corner and checks it's on the curve, not the
+   straight line. Test cars have to stay under 400 km/h now: the first figure tests drove at
+   720 km/h, so the speed check dropped their neighbours and the curve came out straight.
 8. **Left for later:**
-   - *P7.3 (implausible jumps):* a bad sample bends the curve. Car 16 has one sample that implies
-     642 km/h, followed by a 1.28 s dropout; the curve follows it and overshoots, 13 m from the
-     straight line at the worst midpoint (22 m across all cars). P7's jump detector finds such
-     samples, and the replay can then skip them.
-   - *P1.7 (perf review):* the curve costs about 2 µs more per frame for all 20 cars. It stays
-     unless the frame profile says otherwise.
+   - *P7.3 (implausible jumps):* stutters. In 50 of the 354,000 segments one sample lags (the
+     pair implies 14 to 53 km/h, the samples either side 270 to 630 km/h), and the curve briefly
+     moves the car backwards, by 2.2 m at worst. Each sample is plausible on its own, so the
+     neighbour checks don't catch it; P7's jump detector, which sees the whole stretch, can.
+   - *P1.7 (perf review):* `positionAt` for 20 cars now takes about 10 µs a frame, up from about
+     3 µs in P1.4: the curve, and the distance checks done again on every frame. They only change
+     when the pair does, so they could be kept with the cursor. `catmullRom` also makes a few
+     small arrays per call (about 100 a frame). Both are far below the 16.7 ms budget; the frame
+     profile decides.
 
 ### Measured (Monza)
 
 | | |
 |---|---|
-| `positionAt` for all 20 cars, one frame at 1× | about 5 µs (linear: about 3 µs) |
-| The same at 10× | about 5.5 µs (linear: about 3.5 µs) |
-| Curve vs straight line, at the midpoint between samples | median 0.19 m, p90 0.93 m, p99 2.5 m |
+| `positionAt` for all 20 cars, one frame at 1× | about 10 µs (linear, with the same checks: about 7 µs) |
+| The same at 10× | about 11 µs (linear: about 8 µs) |
+| Curve vs straight line, at the midpoint between samples | median 0.14 m, p90 0.71 m, p99 1.6 m, max 7.5 m |
+| A parked car's drift between two identical samples | 0 (was 25 m before the code review) |
 | Bundle | 317.78 kB JS (97.19 kB gzipped), 0.6 kB more than P1.5; the figure code isn't in it |
-| `pnpm check` | 139 tests, 100% coverage; mutation testing caught all 36 mutants in the new code |
+| `pnpm check` | 146 tests, 100% coverage; mutation testing caught all 36 mutants in the new code, and all 14 in the review fixes |
 
 ## Measured (P1.2, empty app)
 

@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { Race } from '../race/load'
+import { MAX_GAP_MS } from '../replay/carTrack'
 import { type Samples, sampleAt } from '../replay/interpolate'
 import { Projection } from '../track/projection'
 import { InterpolationFigure } from './InterpolationFigure'
@@ -14,6 +15,7 @@ const MIN_LEG_DM = 100
  * direction between the `reach` samples before it and the `reach` after it. Looking a few samples
  * either side, not just one, smooths out the noise in the positions; and both stretches must cover
  * at least `MIN_LEG_DM`, or a car standing still (in its pit box) would jitter into a sharp "turn".
+ * Samples with a gap among them are skipped too.
  */
 export function sharpestTurn(car: Samples, fromMs: number, toMs: number, reach: number): number {
   const { t, x, y } = car
@@ -25,6 +27,10 @@ export function sharpestTurn(car: Samples, fromMs: number, toMs: number, reach: 
       continue
     }
     if (distance(x, y, i - reach, i) < MIN_LEG_DM || distance(x, y, i, i + reach) < MIN_LEG_DM) {
+      continue
+    }
+    // across a gap the car wasn't seen, so a "turn" there is where it went missing and came back
+    if (hasGap(t, i - reach, i + reach)) {
       continue
     }
     const into = heading(x, y, i - reach, i)
@@ -40,6 +46,16 @@ export function sharpestTurn(car: Samples, fromMs: number, toMs: number, reach: 
     throw new RangeError(`no samples between ${String(fromMs)} and ${String(toMs)} ms`)
   }
   return best
+}
+
+/** Whether two neighbouring samples from `from` to `to` are more than MAX_GAP_MS apart. */
+function hasGap(t: Float64Array, from: number, to: number): boolean {
+  for (let j = from; j < to; j++) {
+    if (sampleAt(t, j + 1) - sampleAt(t, j) > MAX_GAP_MS) {
+      return true
+    }
+  }
+  return false
 }
 
 /** How far from sample `from` to sample `to`, in dm. */

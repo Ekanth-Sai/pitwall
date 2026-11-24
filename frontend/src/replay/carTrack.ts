@@ -8,6 +8,13 @@ import { type Interpolator, linear, sampleAt, type Samples } from './interpolate
 export const MAX_GAP_MS = 5000
 
 /**
+ * Faster than this between two samples (in dm per ms: 400 km/h) is a glitch in the data, not
+ * driving. Such a sample isn't used to bend the curve next to it.
+ * 1 dm/ms = 0.1 m per 0.001 s = 100 m/s = 360 km/h.
+ */
+export const MAX_SPEED_DM_PER_MS = 400 / 360 // 400 km/h = 400/360 dm/ms
+
+/**
  * One car's position at any race time, between its samples, by an `Interpolator` (a straight line
  * unless told otherwise).
  *
@@ -46,17 +53,30 @@ export class CarTrack {
     if (sampleAt(this.t, i + 1) - t0 > MAX_GAP_MS) {
       return null
     }
-    const before = this.beside(i, i - 1)
-    const after = this.beside(i + 1, i + 2)
+    // a car standing still, or jumping faster than any car drives (the data catching up after it
+    // froze), gets a straight line: the samples either side could only bend it further wrong
+    const straight = this.distance(i, i + 1) === 0 || this.beside(i, i + 1) === i
+    const before = straight ? i : this.beside(i, i - 1)
+    const after = straight ? i + 1 : this.beside(i + 1, i + 2)
     return this.interpolate(this.samples, ms, i, i + 1, before, after)
   }
 
-  /** Sample `next`, beside sample `i`, if there is one and it isn't across a gap; otherwise `i`. */
+  /**
+   * Sample `next`, beside sample `i`, if there is one and the car plausibly drove between the two:
+   * not across a gap, and not faster than MAX_SPEED_DM_PER_MS. Otherwise `i`.
+   */
   private beside(i: number, next: number): number {
     if (next < 0 || next >= this.t.length) {
       return i
     }
-    return Math.abs(sampleAt(this.t, next) - sampleAt(this.t, i)) > MAX_GAP_MS ? i : next
+    const ms = Math.abs(sampleAt(this.t, next) - sampleAt(this.t, i))
+    return ms > MAX_GAP_MS || this.distance(i, next) > MAX_SPEED_DM_PER_MS * ms ? i : next
+  }
+
+  /** How far apart samples `i` and `j` are, in dm. */
+  private distance(i: number, j: number): number {
+    const { x, y } = this.samples
+    return Math.hypot(sampleAt(x, j) - sampleAt(x, i), sampleAt(y, j) - sampleAt(y, i))
   }
 
   /** The index i with t[i] <= ms < t[i + 1]. `ms` is within the samples and before the last one. */

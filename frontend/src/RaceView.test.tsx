@@ -100,13 +100,13 @@ describe('RaceView', () => {
   })
 
   it('takes a car round a corner on a curve, not a straight line', () => {
-    // along x, then turning up in y
-    const corner = { ...makeCar(44, [0, 100, 200, 300]), y: Float64Array.from([0, 0, 100, 300]) }
+    // along x, then turning up in y, below the speed limit throughout
+    const corner = { ...makeCar(44, [0, 100, 200, 300]), y: Float64Array.from([0, 0, 30, 70]) }
     const { frame, drawn } = setup({ ...race, cars: [corner] })
     frame(150)
     expect(drawn().get('44')).toBe(at(...catmullRom(corner, 150, 1, 2, 0, 3)))
     // a straight line would be halfway between the two samples
-    expect(drawn().get('44')).not.toBe(at(150, 50))
+    expect(drawn().get('44')).not.toBe(at(150, 15))
   })
 
   it('stops asking for frames when it goes away', () => {

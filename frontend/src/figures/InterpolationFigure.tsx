@@ -50,7 +50,10 @@ export function InterpolationFigure({ car, projection, first, last }: Interpolat
   // figure is only drawn where there's none
   const on = (track: CarTrack): Point[] => {
     const points: Point[] = []
-    for (let ms = from; ms <= to; ms += STEP_MS) {
+    const steps = Math.ceil((to - from) / STEP_MS)
+    // the last step lands exactly on the last sample, even when it's not a whole STEP_MS on
+    for (let k = 0; k <= steps; k++) {
+      const ms = Math.min(from + k * STEP_MS, to)
       const position = track.positionAt(ms)
       if (position === null) {
         throw new RangeError(`car ${String(car.number)} wasn't seen at ${String(ms)} ms`)
@@ -65,7 +68,8 @@ export function InterpolationFigure({ car, projection, first, last }: Interpolat
   for (let i = first; i <= last; i++) {
     samples.push(projection.project(sampleAt(car.x, i), sampleAt(car.y, i)))
   }
-  const { toPixels, perMetre } = fit(samples)
+  // the curve can bulge past the samples, so it's fitted in too
+  const { toPixels, perMetre } = fit([...samples, ...curve, ...line])
   const name = `Car ${String(car.number)} (${car.acronym})`
   const title = `${name} through a corner, ${String(samples.length)} samples`
   const description = `${title}: straight lines between them cut the corner, the curve follows it`

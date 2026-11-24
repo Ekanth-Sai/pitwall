@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import monza from '../../public/races/monza-2024.json?raw'
 import { parseRace } from '../race/load'
-import { CarTrack, MAX_GAP_MS, sampleAt } from './carTrack'
+import { CarTrack, MAX_GAP_MS, MAX_SPEED_DM_PER_MS } from './carTrack'
+import type { Interpolator } from './interpolate'
 
 // A car with samples at the given times, moving 10 dm in x per ms and staying at y = 5.
 function track(times: number[]): CarTrack {
@@ -13,15 +14,14 @@ function track(times: number[]): CarTrack {
   })
 }
 
-describe('sampleAt', () => {
-  it('reads a sample', () => {
-    expect(sampleAt(Float64Array.from([4, 7]), 1)).toBe(7)
-  })
-
-  it('rejects an index outside the samples', () => {
-    expect(() => sampleAt(Float64Array.from([4, 7]), 2)).toThrow('no sample 2 in 2')
-  })
-})
+// raw samples at the given times and x positions, at y = 0; x defaults to 1 dm per ms (360 km/h)
+function samples(times: number[], xs: number[] = times) {
+  return {
+    t: Float64Array.from(times),
+    x: Float64Array.from(xs),
+    y: new Float64Array(times.length),
+  }
+}
 
 describe('CarTrack.positionAt', () => {
   it('is exact at every sample', () => {
@@ -71,6 +71,80 @@ describe('CarTrack.positionAt', () => {
   it('rejects columns of different lengths', () => {
     const t = Float64Array.from([0, 1])
     expect(() => new CarTrack({ t, x: t, y: Float64Array.from([0]) })).toThrow(RangeError)
+  })
+
+  it('hands the interpolator the pair around the time and the samples either side', () => {
+    const car = samples([0, 100, 200, 300])
+    const interpolate = vi.fn<Interpolator>(() => [1, 2])
+    const positions = new CarTrack(car, interpolate)
+    expect(positions.positionAt(150)).toEqual([1, 2])
+    expect(interpolate).toHaveBeenLastCalledWith(car, 150, 1, 2, 0, 3)
+    // at the first and last pair there's nothing further out, so the pair's own end is repeated
+    positions.positionAt(50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 50, 0, 1, 0, 2)
+    positions.positionAt(250)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 250, 2, 3, 1, 3)
+    // on a sample it isn't asked at all
+    interpolate.mockClear()
+    positions.positionAt(200)
+    expect(interpolate).not.toHaveBeenCalled()
+  })
+
+  it("doesn't hand the interpolator a sample across a gap", () => {
+    const after = 100 + MAX_GAP_MS + 1
+    const car = samples([0, 100, after, after + 100])
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    const positions = new CarTrack(car, interpolate)
+    positions.positionAt(50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 50, 0, 1, 0, 1)
+    positions.positionAt(after + 50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, after + 50, 2, 3, 2, 3)
+  })
+
+  it('hands the interpolator a sample exactly the limit away', () => {
+    const car = samples([0, MAX_GAP_MS, MAX_GAP_MS + 100, 2 * MAX_GAP_MS + 100])
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    new CarTrack(car, interpolate).positionAt(MAX_GAP_MS + 50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, MAX_GAP_MS + 50, 1, 2, 0, 3)
+  })
+
+  it("doesn't hand the interpolator a sample the car couldn't have driven to", () => {
+    // 1 dm further than the speed limit allows in 100 ms: back along x before the pair, and
+    // sideways in y after it
+    const jump = MAX_SPEED_DM_PER_MS * 100 + 1
+    const car = { ...samples([0, 100, 200, 300], [100 - jump, 100, 200, 200]) }
+    car.y[3] = jump
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    new CarTrack(car, interpolate).positionAt(150)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 150, 1, 2, 1, 2)
+  })
+
+  it('hands the interpolator a sample at 400 km/h, but not one at 401 km/h', () => {
+    // 400 dm in 360 ms is exactly 400 km/h
+    const limit = samples([0, 360, 720, 1080], [0, 400, 800, 1200])
+    const over = samples([0, 360, 720, 1080], [-1, 400, 800, 1201])
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    new CarTrack(limit, interpolate).positionAt(500)
+    expect(interpolate).toHaveBeenLastCalledWith(limit, 500, 1, 2, 0, 3)
+    new CarTrack(over, interpolate).positionAt(500)
+    expect(interpolate).toHaveBeenLastCalledWith(over, 500, 1, 2, 1, 2)
+  })
+
+  it('draws a jump faster than any car drives as a straight line', () => {
+    // the pair is too far apart for 100 ms; the samples either side are ordinary driving
+    const jump = MAX_SPEED_DM_PER_MS * 100 + 1
+    const car = samples([0, 100, 200, 300], [0, 100, 100 + jump, 200 + jump])
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    new CarTrack(car, interpolate).positionAt(150)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 150, 1, 2, 1, 2)
+  })
+
+  it('keeps a car standing still where it is, whatever its samples either side do', () => {
+    // stopped at x = 100 from 100 to 200 ms, with the samples either side some way off
+    const car = samples([0, 100, 200, 300], [0, 100, 100, 200])
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    new CarTrack(car, interpolate).positionAt(150)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 150, 1, 2, 1, 2)
   })
 
   it('agrees with a plain scan on the real race, playing forwards and seeking around', () => {

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Car, Race } from './race/load'
 import { RaceView } from './RaceView'
+import { catmullRom } from './replay/interpolate'
 import { installFakeFrames } from './test/frames'
 import { Projection } from './track/projection'
 
@@ -43,11 +44,12 @@ const race: Race = {
 
 const projection = new Projection(race.track.rotation, race.track.bounds)
 
-// renders the view with hand-moved wall time and frames; `frame(ms)` moves time on, then draws
-function setup() {
+// renders a race (the one above unless given) with hand-moved wall time and frames; `frame(ms)`
+// moves time on, then draws
+function setup(shown: Race = race) {
   const frames = installFakeFrames()
   let wall = 0
-  const view = render(<RaceView race={race} now={() => wall} />)
+  const view = render(<RaceView race={shown} now={() => wall} />)
   function frame(ms: number) {
     wall += ms
     act(() => {
@@ -95,6 +97,16 @@ describe('RaceView', () => {
     expect(drawn().has('16')).toBe(false)
     frame(5000)
     expect(drawn()).toEqual(new Map([['1', at(1000, 0)]]))
+  })
+
+  it('takes a car round a corner on a curve, not a straight line', () => {
+    // along x, then turning up in y, below the speed limit throughout
+    const corner = { ...makeCar(44, [0, 100, 200, 300]), y: Float64Array.from([0, 0, 30, 70]) }
+    const { frame, drawn } = setup({ ...race, cars: [corner] })
+    frame(150)
+    expect(drawn().get('44')).toBe(at(...catmullRom(corner, 150, 1, 2, 0, 3)))
+    // a straight line would be halfway between the two samples
+    expect(drawn().get('44')).not.toBe(at(150, 15))
   })
 
   it('stops asking for frames when it goes away', () => {

@@ -33,6 +33,8 @@ frontend/
 ├── tsconfig.app.json     types for src/ (the browser code)
 ├── tsconfig.node.json    types for vite.config.ts (runs in Node)
 ├── public/               copied as-is into the build: favicon, races/monza-2024.json (P1.1)
+├── scripts/
+│   └── interpolation-figure.js  `pnpm figure`: writes docs/figures/interpolation.svg (P1.6)
 └── src/
     ├── main.tsx          entry point: mounts App into index.html's #root
     ├── App.tsx           the top component: downloads the race, then shows it
@@ -41,10 +43,14 @@ frontend/
     ├── controls/
     │   ├── Controls.tsx  play/pause, 1×/10×, the space bar, race time
     │   └── raceTime.ts   race time as m:ss or h:mm:ss
+    ├── figures/          figures for docs/, drawn as React components (not in the app bundle)
+    │   ├── InterpolationFigure.tsx  one car through a corner: linear vs Catmull-Rom
+    │   └── interpolation.ts  finds the corner, renders the figure to SVG text
     ├── race/load.ts      downloads and checks the race file, decodes the deltas
     ├── replay/
     │   ├── clock.ts      PlaybackClock: race time from wall time, speed, play/pause/seek
     │   ├── carTrack.ts   CarTrack: one car's position at any race time
+    │   ├── interpolate.ts  Interpolator: linear and Catmull-Rom between two samples
     │   ├── usePlayback.ts  a hook: one clock for the view, and what the controls can do to it
     │   └── useAnimationFrame.ts  a hook that calls back once per screen refresh, while active
     ├── track/
@@ -70,6 +76,7 @@ Run from `frontend/` as `pnpm <script>`, or from the repo root through the Makef
 | `check` | `make web-check` | The gate, below |
 | `build` | `make web-build` | Type check, then bundle into `dist/` |
 | `preview` | | Serves `dist/` locally, to try the production build |
+| `figure` | | Writes `docs/figures/interpolation.svg` from the Monza race (P1.6) |
 
 `pnpm check` runs the same steps as CI, stopping at the first failure:
 
@@ -268,7 +275,8 @@ stateDiagram-v2
 2. **Finding a car's two samples.** `positionAt` binary-searches the car's times, O(log n), but
    first tries the pair of samples it used last time and the next pair. While playing, the next
    frame is almost always in one of those, so it's O(1) per frame; after a seek it falls back to
-   the search. Between the two samples, it interpolates in a straight line. A test checks it
+   the search. Between the two samples, it interpolates in a straight line (a curve since P1.6,
+   [below](#smoothing-the-corners-p16)). A test checks it
    against a brute-force scan over the whole Monza race, playing forwards and seeking around.
 3. **When a car isn't drawn.** Before its first sample, after its last, and between two samples
    more than 5 s apart (`MAX_GAP_MS`): a gap that long means the car wasn't seen (garage, retired,
@@ -431,6 +439,116 @@ sequenceDiagram
 |---|---|
 | Bundle | 317.15 kB JS (96.95 kB gzipped), 1.6 kB more than P1.4; CSS 1.0 kB |
 | `pnpm check` | 115 tests, 100% coverage; mutation testing caught all 13 mutants in the new code, and all 11 in the review fixes |
+
+## Smoothing the corners (P1.6)
+
+Between two samples a car used to move in a straight line, so through a corner it cut across the
+inside and turned sharply at each sample. Now it follows a Catmull-Rom curve: smooth, and still
+through every sample.
+
+![Car 16 through a corner: the dashed straight lines cut inside the samples, the Catmull-Rom curve follows them](../figures/interpolation.svg)
+
+How the curve is worked out is a strategy that `CarTrack` is given, so the two can be swapped and
+compared:
+
+```mermaid
+flowchart LR
+    R["RaceView"] -->|"new CarTrack(car, catmullRom)"| C["CarTrack<br/>finds the pair around the time,<br/>and the samples either side"]
+    C -->|"samples, ms, from, to, before, after"| I{"Interpolator"}
+    I --> L["linear<br/>uses the pair only"]
+    I --> K["catmullRom<br/>uses all four"]
+    F["InterpolationFigure"] -->|"both, side by side"| C
+```
+
+1. **An `Interpolator` is a function type.** It takes the samples, the time and four sample
+   numbers: the pair around the time (`from`, `to`) and one either side (`before`, `after`).
+   `CarTrack` decides which samples those are, since it knows about the data: a neighbour is used
+   only if the car plausibly drove between it and the pair. Not at a car's first or last sample,
+   not across a gap over 5 s, and not if getting there would take more than 400 km/h
+   (`MAX_SPEED_DM_PER_MS`). Where there's none, it passes the pair's own end again. A pair that
+   doesn't move at all, or moves faster than 400 km/h itself (the data catching up after it
+   froze), gets no neighbours, so it's drawn straight. The interpolators only do maths, on sample
+   numbers rather than points. `CarTrack` defaults to `linear`; `RaceView` passes `catmullRom`.
+
+   The code review found why the plausibility checks are needed. Car 44's position froze for five
+   samples and then jumped 315 m in 300 ms; between two identical frozen samples, the curve bent
+   towards the jump and drew the parked car wandering 25 m away and back.
+2. **Catmull-Rom, Barry–Goldman form.** The curve between p1 and p2 also looks at p0 before and
+   p3 after, which tell it which way the car was heading. Barry and Goldman's form builds it from
+   straight-line blends only, each over the times of the points it mixes:
+
+   ```mermaid
+   flowchart BT
+       P0["p0 at t0"] --> A1
+       P1["p1 at t1"] --> A1
+       P1 --> A2
+       P2["p2 at t2"] --> A2
+       P2 --> A3
+       P3["p3 at t3"] --> A3
+       A1["a1: blend over t0..t1"] --> B1
+       A2["a2: blend over t1..t2"] --> B1
+       A2 --> B2
+       A3["a3: blend over t2..t3"] --> B2
+       B1["b1: blend over t0..t2"] --> C
+       B2["b2: blend over t1..t3"] --> C
+       C["the point: blend over t1..t2"]
+   ```
+
+   Each `blend` is the value at time `ms` on the straight line through two values at two times,
+   the same sum as the old straight line.
+3. **The knots are the samples' times.** The textbook curve spaces its points evenly (0, 1, 2, 3).
+   OpenF1's samples aren't evenly spaced (about 200 to 300 ms apart), and a car covers more ground
+   in a longer interval, so the times themselves are the knots. That keeps a straight line driven
+   at constant speed exactly straight, at the right speed. With evenly spaced samples it gives the
+   textbook value, which a test checks against the textbook formula.
+4. **At the ends, a mirror image.** Where `before` or `after` is the pair's own end, the missing
+   point is made by mirroring the pair's far end through it, in position and in time
+   (`2 × here − there`). Mirrored points line up with the pair, so the curve is the straight line
+   there. Times strictly increase (the loader checks), so no two knots are equal and nothing is
+   divided by zero.
+5. **How much it changes.** At the midpoint between two samples, over the whole race (354,000
+   pairs), the curve and the straight line are 0.14 m apart at the median, 0.71 m at p90 and
+   1.6 m at p99, and 7.5 m at most. At 4 Hz the straight line was already close; the curve takes
+   away the kink at each sample, which is what the eye notices in a corner.
+6. **The figure is drawn by the app's own code.** `InterpolationFigure` is a React component
+   rendered to an SVG string with `renderToStaticMarkup`, and its two lines come from two
+   `CarTrack`s, one per interpolator. `pnpm figure` loads it through Vite (`runnerImport`, as Node
+   can't load the TypeScript itself) and writes `docs/figures/interpolation.svg`, with colours for
+   light and dark mode. It picks the corner itself: `sharpestTurn` finds the biggest change of
+   direction over 3 samples either side, 20 minutes in. Its first pick was Leclerc standing in
+   his pit box: at zero speed the position jitters, and that looked like a 90° turn. Both
+   stretches now have to cover at least 10 m, and none may span a gap. The drawing is scaled to
+   fit the curve as well as the samples, since the curve can bulge past them, and both lines run
+   all the way to the last sample.
+7. **Testing.** The interpolators are tested on known curves: through every sample, a straight
+   line exact with or without samples beside it, about 10× closer to a circle than straight lines
+   (10 dm against 97 dm at worst), and the textbook value. `CarTrack` is tested with a fake
+   interpolator (`vi.fn`) that records which sample numbers it was handed, including next to a
+   gap and exactly at the limit, at 400 km/h and at 401, standing still, and a jump between the
+   pair. A `RaceView` test takes a car round a corner and checks it's on the curve, not the
+   straight line. Test cars have to stay under 400 km/h now: the first figure tests drove at
+   720 km/h, so the speed check dropped their neighbours and the curve came out straight.
+8. **Left for later:**
+   - *P7.3 (implausible jumps):* stutters. In 50 of the 354,000 segments one sample lags (the
+     pair implies 14 to 53 km/h, the samples either side 270 to 630 km/h), and the curve briefly
+     moves the car backwards, by 2.2 m at worst. Each sample is plausible on its own, so the
+     neighbour checks don't catch it; P7's jump detector, which sees the whole stretch, can.
+   - *P1.7 (perf review):* `positionAt` for 20 cars now takes about 10 µs a frame, up from about
+     3 µs in P1.4: the curve, and the distance checks done again on every frame. They only change
+     when the pair does, so they could be kept with the cursor. `catmullRom` also makes a few
+     small arrays per call (about 100 a frame). Both are far below the 16.7 ms budget; the frame
+     profile decides.
+
+### Measured (Monza)
+
+| | |
+|---|---|
+| `positionAt` for all 20 cars, one frame at 1× | about 10 µs (linear, with the same checks: about 7 µs) |
+| The same at 10× | about 11 µs (linear: about 8 µs) |
+| Curve vs straight line, at the midpoint between samples | median 0.14 m, p90 0.71 m, p99 1.6 m, max 7.5 m |
+| A parked car's drift between two identical samples | 0 (was 25 m before the code review) |
+| Bundle | 317.78 kB JS (97.19 kB gzipped), 0.6 kB more than P1.5; the figure code isn't in it |
+| `pnpm check` | 146 tests, 100% coverage; mutation testing caught all 36 mutants in the new code, and all 14 in the review fixes |
 
 ## Measured (P1.2, empty app)
 

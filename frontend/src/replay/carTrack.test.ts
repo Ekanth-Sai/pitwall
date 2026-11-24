@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import monza from '../../public/races/monza-2024.json?raw'
 import { parseRace } from '../race/load'
-import { CarTrack, MAX_GAP_MS, sampleAt } from './carTrack'
+import { CarTrack, MAX_GAP_MS } from './carTrack'
+import type { Interpolator } from './interpolate'
 
 // A car with samples at the given times, moving 10 dm in x per ms and staying at y = 5.
 function track(times: number[]): CarTrack {
@@ -12,16 +13,6 @@ function track(times: number[]): CarTrack {
     y: Float64Array.from(times, () => 5),
   })
 }
-
-describe('sampleAt', () => {
-  it('reads a sample', () => {
-    expect(sampleAt(Float64Array.from([4, 7]), 1)).toBe(7)
-  })
-
-  it('rejects an index outside the samples', () => {
-    expect(() => sampleAt(Float64Array.from([4, 7]), 2)).toThrow('no sample 2 in 2')
-  })
-})
 
 describe('CarTrack.positionAt', () => {
   it('is exact at every sample', () => {
@@ -71,6 +62,47 @@ describe('CarTrack.positionAt', () => {
   it('rejects columns of different lengths', () => {
     const t = Float64Array.from([0, 1])
     expect(() => new CarTrack({ t, x: t, y: Float64Array.from([0]) })).toThrow(RangeError)
+  })
+
+  it('hands the interpolator the pair around the time and the samples either side', () => {
+    const car = {
+      t: Float64Array.from([0, 100, 200, 300]),
+      x: new Float64Array(4),
+      y: new Float64Array(4),
+    }
+    const interpolate = vi.fn<Interpolator>(() => [1, 2])
+    const positions = new CarTrack(car, interpolate)
+    expect(positions.positionAt(150)).toEqual([1, 2])
+    expect(interpolate).toHaveBeenLastCalledWith(car, 150, 1, 2, 0, 3)
+    // at the first and last pair there's nothing further out, so the pair's own end is repeated
+    positions.positionAt(50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 50, 0, 1, 0, 2)
+    positions.positionAt(250)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 250, 2, 3, 1, 3)
+    // on a sample it isn't asked at all
+    interpolate.mockClear()
+    positions.positionAt(200)
+    expect(interpolate).not.toHaveBeenCalled()
+  })
+
+  it("doesn't hand the interpolator a sample across a gap", () => {
+    const after = 100 + MAX_GAP_MS + 1
+    const t = Float64Array.from([0, 100, after, after + 100])
+    const car = { t, x: new Float64Array(4), y: new Float64Array(4) }
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    const positions = new CarTrack(car, interpolate)
+    positions.positionAt(50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, 50, 0, 1, 0, 1)
+    positions.positionAt(after + 50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, after + 50, 2, 3, 2, 3)
+  })
+
+  it('hands the interpolator a sample exactly the limit away', () => {
+    const t = Float64Array.from([0, MAX_GAP_MS, MAX_GAP_MS + 100, 2 * MAX_GAP_MS + 100])
+    const car = { t, x: new Float64Array(4), y: new Float64Array(4) }
+    const interpolate = vi.fn<Interpolator>(() => [0, 0])
+    new CarTrack(car, interpolate).positionAt(MAX_GAP_MS + 50)
+    expect(interpolate).toHaveBeenLastCalledWith(car, MAX_GAP_MS + 50, 1, 2, 0, 3)
   })
 
   it('agrees with a plain scan on the real race, playing forwards and seeking around', () => {
